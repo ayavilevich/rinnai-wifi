@@ -20,7 +20,7 @@ IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword);
 // state
 boolean needPostWifiConnect = false;
 
-// daclarations
+// declarations
 void handleRoot();
 void setupWifiManager();
 void setupOTA();
