@@ -118,11 +118,11 @@ void setupOTA()
 	// No authentication by default
 	ArduinoOTA.setPassword(OTAPassword);
 
-	ArduinoOTA.setMdnsEnabled(false); // we already have DNS from the wifi manager
-
 	// Password can be set with it's md5 value as well
 	// MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
 	// ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+	ArduinoOTA.setMdnsEnabled(false); // we already have DNS from the wifi manager
 
 	ArduinoOTA
 		.onStart([]() {
