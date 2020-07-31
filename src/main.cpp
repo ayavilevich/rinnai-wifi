@@ -4,6 +4,14 @@
 #include <IotWebConf.h> // https://github.com/prampec/IotWebConf
 #include <MQTT.h>		// https://github.com/256dpi/arduino-mqtt
 
+#include "RinnaiSignalDecoder.hpp"
+#include "StreamPrintf.hpp"
+
+// confirn required parameters passed from the ini
+#ifndef SERIAL_BAUD
+#error Need to pass SERIAL_BAUD
+#endif
+
 // hardcoded settings (TODO, move to separate config or to the ini)
 // -- Initial name of the Thing. Used e.g. as SSID of the own Access Point.
 const char thingName[] = "rinnai-wifi";
@@ -27,6 +35,7 @@ const char mqttTopic[] = "homeassistant/climate/rinnai";
 //      First it will light up (kept LOW), on Wifi connection it will blink,
 //      when connected to the Wifi it will turn off (kept HIGH).
 #define STATUS_PIN LED_BUILTIN
+#define RX_RINNAI_PIN 25
 
 // main objects
 DNSServer dnsServer;
@@ -34,6 +43,7 @@ WebServer server(80);
 IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CONFIG_VERSION);
 WiFiClient net;
 MQTTClient mqttClient;
+RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
 
 // state
 boolean needReset = false;
@@ -69,9 +79,12 @@ void mqttMessageReceived(String &topic, String &payload);
 // code
 void setup()
 {
-	Serial.begin(115200);
+	Serial.begin(SERIAL_BAUD);
 	Serial.println();
 	Serial.println("Starting up...");
+
+	bool ret = rxDecoder.setup();
+	StreamPrintf(Serial, "Finished setting up decoder, %d\n", ret);
 
 	setupWifiManager();
 	setupMqtt();
@@ -202,6 +215,7 @@ void loop()
 		ESP.restart();
 	}
 
+	// test mqtt functionality
 	// send pin status if changed
 	unsigned long now = millis();
 	if ((500 < now - lastReport) && (pinState != digitalRead(MQTT_PIN)))
@@ -212,6 +226,39 @@ void loop()
 		Serial.println(pinState == LOW ? "ON" : "OFF");
 		mqttClient.publish(mqttTopicState, pinState == LOW ? "ON" : "OFF");
 	}
+
+	// low level rinnai decoding monitoring
+	StreamPrintf(Serial, "errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
+	StreamPrintf(Serial, "pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
+	/*
+	static unsigned long lastPulseTime = 0;
+	while (uxQueueMessagesWaiting(rxDecoder.getPulseQueue()))
+	{
+		PulseQueueItem item;
+		BaseType_t ret = xQueueReceive(rxDecoder.getPulseQueue(), &item, 0); // pdTRUE=1 if an item was successfully received from the queue, otherwise pdFALSE.
+		// hack delta
+		unsigned long d = clockCyclesToMicroseconds(item.cycle - lastPulseTime);
+		lastPulseTime = item.cycle;
+		StreamPrintf(Serial, "p %d %d, q %d, r %d\n", item.newLevel, d, uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), ret);
+	}
+	*/
+	StreamPrintf(Serial, "bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
+	/*
+	while (uxQueueMessagesWaiting(rxDecoder.getBitQueue()))
+	{
+		BitQueueItem item;
+		BaseType_t ret = xQueueReceive(rxDecoder.getBitQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
+		StreamPrintf(Serial, "b %d %d %d, q %d, r %d\n", item.bit, item.startCycle, item.misc, uxQueueMessagesWaiting(rxDecoder.getBitQueue()), ret);
+	}
+	*/
+	StreamPrintf(Serial, "packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
+	while (uxQueueMessagesWaiting(rxDecoder.getPacketQueue()))
+	{
+		PacketQueueItem item;
+		BaseType_t ret = xQueueReceive(rxDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
+		StreamPrintf(Serial, "pkt %d %02x%02x%02x %u %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
+	}
+	delay(100);
 }
 
 /**
