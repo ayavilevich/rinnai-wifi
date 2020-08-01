@@ -36,6 +36,7 @@ const char mqttTopic[] = "homeassistant/climate/rinnai";
 //      when connected to the Wifi it will turn off (kept HIGH).
 #define STATUS_PIN LED_BUILTIN
 #define RX_RINNAI_PIN 25
+#define TX_IN_RINNAI_PIN 26
 
 // main objects
 DNSServer dnsServer;
@@ -44,6 +45,7 @@ IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CON
 WiFiClient net;
 MQTTClient mqttClient;
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
+RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN);
 
 // state
 boolean needReset = false;
@@ -83,8 +85,14 @@ void setup()
 	Serial.println();
 	Serial.println("Starting up...");
 
-	bool ret = rxDecoder.setup();
-	StreamPrintf(Serial, "Finished setting up decoder, %d\n", ret);
+	bool retRx = rxDecoder.setup();
+	StreamPrintf(Serial, "Finished setting up rx decoder, %d\n", retRx);
+	bool retTx = txDecoder.setup();
+	StreamPrintf(Serial, "Finished setting up tx decoder, %d\n", retTx);
+	if (!retRx || !retTx)
+	{
+		for(;;); // hang further execution
+	}
 
 	setupWifiManager();
 	setupMqtt();
@@ -228,8 +236,8 @@ void loop()
 	}
 
 	// low level rinnai decoding monitoring
-	StreamPrintf(Serial, "errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
-	StreamPrintf(Serial, "pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
+	StreamPrintf(Serial, "rx errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
+	StreamPrintf(Serial, "rx pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
 	/*
 	static unsigned long lastPulseTime = 0;
 	while (uxQueueMessagesWaiting(rxDecoder.getPulseQueue()))
@@ -239,24 +247,32 @@ void loop()
 		// hack delta
 		unsigned long d = clockCyclesToMicroseconds(item.cycle - lastPulseTime);
 		lastPulseTime = item.cycle;
-		StreamPrintf(Serial, "p %d %d, q %d, r %d\n", item.newLevel, d, uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), ret);
+		StreamPrintf(Serial, "rx p %d %d, q %d, r %d\n", item.newLevel, d, uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), ret);
 	}
 	*/
-	StreamPrintf(Serial, "bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
+	StreamPrintf(Serial, "rx bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
 	/*
 	while (uxQueueMessagesWaiting(rxDecoder.getBitQueue()))
 	{
 		BitQueueItem item;
 		BaseType_t ret = xQueueReceive(rxDecoder.getBitQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
-		StreamPrintf(Serial, "b %d %d %d, q %d, r %d\n", item.bit, item.startCycle, item.misc, uxQueueMessagesWaiting(rxDecoder.getBitQueue()), ret);
+		StreamPrintf(Serial, "rx b %d %d %d, q %d, r %d\n", item.bit, item.startCycle, item.misc, uxQueueMessagesWaiting(rxDecoder.getBitQueue()), ret);
 	}
 	*/
-	StreamPrintf(Serial, "packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
+	StreamPrintf(Serial, "rx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
 	while (uxQueueMessagesWaiting(rxDecoder.getPacketQueue()))
 	{
 		PacketQueueItem item;
 		BaseType_t ret = xQueueReceive(rxDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
-		StreamPrintf(Serial, "pkt %d %02x%02x%02x %u %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
+		StreamPrintf(Serial, "rx pkt %d %02x%02x%02x %u %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
+	}
+	StreamPrintf(Serial, "tx errors: pulse %d, bit %d, packet %d\n", txDecoder.getPulseHandlerErrorCounter(), txDecoder.getBitTaskErrorCounter(), txDecoder.getPacketTaskErrorCounter());
+	StreamPrintf(Serial, "tx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getPacketQueue()), uxQueueSpacesAvailable(txDecoder.getPacketQueue()));
+	while (uxQueueMessagesWaiting(txDecoder.getPacketQueue()))
+	{
+		PacketQueueItem item;
+		BaseType_t ret = xQueueReceive(txDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
+		StreamPrintf(Serial, "tx pkt %d %02x%02x%02x %u %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
 	}
 	delay(100);
 }

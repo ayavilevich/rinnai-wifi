@@ -42,7 +42,7 @@ bool RinnaiSignalDecoder::setup()
 	// use either gpio_isr_register (global ISR for all pins) or gpio_install_isr_service + gpio_isr_handler_add (per pin)
 	esp_err_t ret_isr;
 	ret_isr = gpio_install_isr_service(ESP_INTR_FLAG_IRAM); // ESP_INTR_FLAG_IRAM -> code is in RAM -> allows the interrupt to run even during flash operations
-	if (ret_isr != ESP_OK)
+	if (ret_isr != ESP_OK && ret_isr != ESP_ERR_INVALID_STATE) // ESP_ERR_INVALID_STATE -> already initialized
 	{
 		return false;
 	}
