@@ -1,8 +1,10 @@
+#pragma once
 #include <Arduino.h>
 
 const byte INVALID_PIN = -1;
 
 // this class decodes pulse length encoded Rinnai data coming from a pin and converts it to bytes
+// this class is also capable of overwriting a packet with override data (proxy functionality)
 class RinnaiSignalDecoder
 {
 public:

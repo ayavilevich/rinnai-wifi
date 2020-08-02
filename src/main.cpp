@@ -5,6 +5,7 @@
 #include <MQTT.h>		// https://github.com/256dpi/arduino-mqtt
 
 #include "RinnaiSignalDecoder.hpp"
+#include "RinnaiMQTTGateway.hpp"
 #include "StreamPrintf.hpp"
 
 // confirn required parameters passed from the ini
@@ -38,7 +39,6 @@ const char mqttTopic[] = "homeassistant/climate/rinnai";
 #define RX_RINNAI_PIN 25
 #define TX_IN_RINNAI_PIN 26
 #define TX_OUT_RINNAI_PIN 12
-const byte OVERRIDE_TEST_DATA[RinnaiSignalDecoder::BYTES_IN_PACKET] = {0x02, 0x00, 0x00, 0x7f, 0xbf, 0xc2};
 
 // main objects
 DNSServer dnsServer;
@@ -48,6 +48,7 @@ WiFiClient net;
 MQTTClient mqttClient;
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
 RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN);
+RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder);
 
 // state
 boolean needReset = false;
@@ -238,58 +239,7 @@ void loop()
 		mqttClient.publish(mqttTopicState, pinState == LOW ? "ON" : "OFF");
 	}
 
-	// low level rinnai decoding monitoring
-	StreamPrintf(Serial, "rx errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
-	StreamPrintf(Serial, "rx pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
-	/*
-	static unsigned long lastPulseTime = 0;
-	while (uxQueueMessagesWaiting(rxDecoder.getPulseQueue()))
-	{
-		PulseQueueItem item;
-		BaseType_t ret = xQueueReceive(rxDecoder.getPulseQueue(), &item, 0); // pdTRUE=1 if an item was successfully received from the queue, otherwise pdFALSE.
-		// hack delta
-		unsigned long d = clockCyclesToMicroseconds(item.cycle - lastPulseTime);
-		lastPulseTime = item.cycle;
-		StreamPrintf(Serial, "rx p %d %d, q %d, r %d\n", item.newLevel, d, uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), ret);
-	}
-	*/
-	StreamPrintf(Serial, "rx bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
-	/*
-	while (uxQueueMessagesWaiting(rxDecoder.getBitQueue()))
-	{
-		BitQueueItem item;
-		BaseType_t ret = xQueueReceive(rxDecoder.getBitQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
-		StreamPrintf(Serial, "rx b %d %d %d, q %d, r %d\n", item.bit, item.startCycle, item.misc, uxQueueMessagesWaiting(rxDecoder.getBitQueue()), ret);
-	}
-	*/
-	StreamPrintf(Serial, "rx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
-	while (uxQueueMessagesWaiting(rxDecoder.getPacketQueue()))
-	{
-		PacketQueueItem item;
-		BaseType_t ret = xQueueReceive(rxDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
-		StreamPrintf(Serial, "rx pkt %d %02x%02x%02x %u %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
-	}
-	StreamPrintf(Serial, "tx errors: pulse %d, bit %d, packet %d\n", txDecoder.getPulseHandlerErrorCounter(), txDecoder.getBitTaskErrorCounter(), txDecoder.getPacketTaskErrorCounter());
-	StreamPrintf(Serial, "tx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getPacketQueue()), uxQueueSpacesAvailable(txDecoder.getPacketQueue()));
-	while (uxQueueMessagesWaiting(txDecoder.getPacketQueue()))
-	{
-		PacketQueueItem item;
-		BaseType_t ret = xQueueReceive(txDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
-		StreamPrintf(Serial, "tx pkt %d %02x%02x%02x %u %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
-	}
-	// set test override packet
-	static int counterOver = 0;
-	if (counterOver == 0)
-	{
-		bool overRet = txDecoder.setOverridePacket(OVERRIDE_TEST_DATA, RinnaiSignalDecoder::BYTES_IN_PACKET);
-		if (overRet == false)
-		{
-			Serial.println("Error setting override");
-		}
-	}
-	counterOver++;
-	counterOver %= 10;
-	delay(100);
+	rinnaiMqttGateway.loop();
 }
 
 /**
