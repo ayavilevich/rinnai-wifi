@@ -1,10 +1,12 @@
 #include <Arduino.h>
 
+const byte INVALID_PIN = -1;
+
 // this class decodes pulse length encoded Rinnai data coming from a pin and converts it to bytes
 class RinnaiSignalDecoder
 {
 public:
-	RinnaiSignalDecoder(const byte pin);
+	RinnaiSignalDecoder(const byte pin, const byte proxyOutPin = INVALID_PIN);
 	bool setup();
 
 	// expose properties
@@ -34,6 +36,8 @@ public:
 		return packetTaskErrorCounter;
 	}
 
+	bool setOverridePacket(const byte * data, int length);
+
 	static const int BYTES_IN_PACKET = 6;
 
 private:
@@ -42,14 +46,24 @@ private:
 	static void pulseISRHandler(void *);
 	void bitTaskHandler();
 	void packetTaskHandler();
+	void overrideTaskHandler();
+	void writeOverridePacket();
+	void writePacket(const byte pin, const byte * data, const byte len);
 
 	// properties
-	byte pin;
-	QueueHandle_t pulseQueue;
-	QueueHandle_t bitQueue;
-	QueueHandle_t packetQueue;
-	TaskHandle_t bitTask;
-	TaskHandle_t packetTask;
+	byte pin = INVALID_PIN;
+	byte proxyOutPin = INVALID_PIN;
+	QueueHandle_t pulseQueue = NULL;
+	QueueHandle_t bitQueue = NULL;
+	QueueHandle_t packetQueue = NULL;
+	TaskHandle_t bitTask = NULL;
+	TaskHandle_t packetTask = NULL;
+	TaskHandle_t overrideTask = NULL;
+	// packet override props
+	byte overridePacket[BYTES_IN_PACKET];
+	bool overridePacketSet = false;
+	unsigned int lastPulseCycle = 0;
+	bool isOverriding = false;
 
 	unsigned int pulseHandlerErrorCounter = 0;
 	unsigned int bitTaskErrorCounter = 0;

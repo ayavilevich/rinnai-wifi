@@ -37,6 +37,8 @@ const char mqttTopic[] = "homeassistant/climate/rinnai";
 #define STATUS_PIN LED_BUILTIN
 #define RX_RINNAI_PIN 25
 #define TX_IN_RINNAI_PIN 26
+#define TX_OUT_RINNAI_PIN 12
+const byte OVERRIDE_TEST_DATA[RinnaiSignalDecoder::BYTES_IN_PACKET] = {0x02, 0x00, 0x00, 0x7f, 0xbf, 0xc2};
 
 // main objects
 DNSServer dnsServer;
@@ -45,7 +47,7 @@ IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CON
 WiFiClient net;
 MQTTClient mqttClient;
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
-RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN);
+RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN);
 
 // state
 boolean needReset = false;
@@ -91,7 +93,8 @@ void setup()
 	StreamPrintf(Serial, "Finished setting up tx decoder, %d\n", retTx);
 	if (!retRx || !retTx)
 	{
-		for(;;); // hang further execution
+		for (;;)
+			; // hang further execution
 	}
 
 	setupWifiManager();
@@ -274,6 +277,18 @@ void loop()
 		BaseType_t ret = xQueueReceive(txDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
 		StreamPrintf(Serial, "tx pkt %d %02x%02x%02x %u %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
 	}
+	// set test override packet
+	static int counterOver = 0;
+	if (counterOver == 0)
+	{
+		bool overRet = txDecoder.setOverridePacket(OVERRIDE_TEST_DATA, RinnaiSignalDecoder::BYTES_IN_PACKET);
+		if (overRet == false)
+		{
+			Serial.println("Error setting override");
+		}
+	}
+	counterOver++;
+	counterOver %= 10;
 	delay(100);
 }
 
