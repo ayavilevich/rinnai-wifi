@@ -8,7 +8,7 @@ const int MAX_PACKETS_IN_QUEUE = 3;
 const int TASK_STACK_DEPTH = 2000; // minimum is configMINIMAL_STACK_SIZE
 const int BIT_TASK_PRIORITY = 1;   // Each task can have a priority between 0 and 24. The upper limit is defined by configMAX_PRIORITIES. The priority of the main loop is 1.
 const int PACKET_TASK_PRIORITY = 1;
-const int OVERRIDE_TASK_PRIORITY = 4;
+const int OVERRIDE_TASK_PRIORITY = 4; // high priority task, will block others while it is running
 
 const int SYMBOL_DURATION_US = 600;
 

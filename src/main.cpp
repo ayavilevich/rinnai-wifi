@@ -46,16 +46,16 @@ WebServer server(80);
 IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CONFIG_VERSION);
 WiFiClient net;
 MQTTClient mqttClient;
+String mqttTopicState(String(mqttTopic) + "/status");
+String mqttTopicSubscribe(String(mqttTopic) + "/#");
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
 RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN);
-RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder);
+RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, mqttTopicState, MQTT_PIN);
 
 // state
 boolean needReset = false;
 boolean needOTAConnect = false;
 boolean needMqttConnect = false;
-int pinState = HIGH;
-unsigned long lastReport = 0;
 unsigned long lastMqttConnectionAttempt = 0;
 
 char mqttServerValue[CONFIG_PARAM_MAX_LEN];
@@ -65,9 +65,6 @@ char mqttUserPasswordValue[CONFIG_PARAM_MAX_LEN];
 IotWebConfParameter mqttServerParam = IotWebConfParameter("MQTT server", "mqttServer", mqttServerValue, CONFIG_PARAM_MAX_LEN);
 IotWebConfParameter mqttUserNameParam = IotWebConfParameter("MQTT user", "mqttUser", mqttUserNameValue, CONFIG_PARAM_MAX_LEN);
 IotWebConfParameter mqttUserPasswordParam = IotWebConfParameter("MQTT password", "mqttPass", mqttUserPasswordValue, CONFIG_PARAM_MAX_LEN, "password");
-
-String mqttTopicState(String(mqttTopic) + "/status");
-String mqttTopicSubscribe(String(mqttTopic) + "/#");
 
 // declarations
 void handleRoot();
@@ -98,6 +95,7 @@ void setup()
 			; // hang further execution
 	}
 
+	Serial.println("Setting up Wifi and Mqtt");
 	setupWifiManager();
 	setupMqtt();
 
@@ -106,6 +104,7 @@ void setup()
 
 void setupWifiManager()
 {
+	// StreamPrintf(Serial, "Config pin: %d\n", digitalRead(CONFIG_PIN));
 	// -- Initializing the configuration.
 	iotWebConf.setStatusPin(STATUS_PIN);
 	iotWebConf.setConfigPin(CONFIG_PIN);
@@ -227,18 +226,7 @@ void loop()
 		ESP.restart();
 	}
 
-	// test mqtt functionality
-	// send pin status if changed
-	unsigned long now = millis();
-	if ((500 < now - lastReport) && (pinState != digitalRead(MQTT_PIN)))
-	{
-		pinState = 1 - pinState; // invert pin state as it is changed
-		lastReport = now;
-		Serial.print("Sending on MQTT channel '" + mqttTopicState + "' :");
-		Serial.println(pinState == LOW ? "ON" : "OFF");
-		mqttClient.publish(mqttTopicState, pinState == LOW ? "ON" : "OFF");
-	}
-
+	// mqtt and rinnai business logic
 	rinnaiMqttGateway.loop();
 }
 
@@ -339,7 +327,7 @@ boolean connectMqttOptions()
 
 void mqttMessageReceived(String &topic, String &payload)
 {
-	Serial.println("Incoming: " + topic + " - " + payload);
+	rinnaiMqttGateway.mqttMessageReceived(topic, payload);
 
 	// Note: Do not use the client in the callback to publish, subscribe or
 	// unsubscribe as it may cause deadlocks when other things arrive while
