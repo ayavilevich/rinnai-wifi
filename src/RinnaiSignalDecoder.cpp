@@ -44,7 +44,7 @@ bool RinnaiSignalDecoder::setup()
 		pinMode(proxyOutPin, OUTPUT);
 		digitalWrite(proxyOutPin, HIGH); // default state when no incoming signal is present
 	}
-	// pinMode(pin, INPUT);
+	// pinMode(pin, INPUT); // too basic
 	gpio_pad_select_gpio(pin);
 	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_INPUT); // is this a valid cast to gpio_num_t?
 	gpio_set_pull_mode((gpio_num_t)pin, GPIO_PULLUP_ONLY);
@@ -57,36 +57,34 @@ bool RinnaiSignalDecoder::setup()
 	ret_isr = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);	   // ESP_INTR_FLAG_IRAM -> code is in RAM -> allows the interrupt to run even during flash operations
 	if (ret_isr != ESP_OK && ret_isr != ESP_ERR_INVALID_STATE) // ESP_ERR_INVALID_STATE -> already initialized
 	{
+		StreamPrintf(Serial, "Error installing isr, %d\n", ret_isr);
 		return false;
 	}
 	ret_isr = gpio_isr_handler_add((gpio_num_t)pin, &RinnaiSignalDecoder::pulseISRHandler, this);
 	if (ret_isr != ESP_OK)
 	{
+		StreamPrintf(Serial, "Error adding isr handler, %d\n", ret_isr);
 		return false;
 	}
-	/*
-	esp_err_t ret_isr = esp_intr_alloc(ETS_GPIO_INTR_SOURCE, (int)ESP_INTR_FLAG_IRAM, gpio_isr_handler, this, NULL); // don't save handle
-	if (ret_isr != ESP_OK)
-	{
-		return false;
-	}
-	*/
 	// create pulse queue
 	pulseQueue = xQueueCreate(MAX_PACKETS_IN_QUEUE * BITS_IN_PACKET * PULSES_IN_BIT, sizeof(PulseQueueItem)); // every bit is two pulses (not including "pre" overhead)
 	if (pulseQueue == 0)
 	{
+		StreamPrintf(Serial, "Error creating queue\n");
 		return false;
 	}
 	// create bit queue
 	bitQueue = xQueueCreate(MAX_PACKETS_IN_QUEUE * BITS_IN_PACKET, sizeof(BitQueueItem));
 	if (bitQueue == 0)
 	{
+		StreamPrintf(Serial, "Error creating queue\n");
 		return false;
 	}
 	// create packet queue
 	packetQueue = xQueueCreate(MAX_PACKETS_IN_QUEUE, sizeof(PacketQueueItem));
 	if (packetQueue == 0)
 	{
+		StreamPrintf(Serial, "Error creating queue\n");
 		return false;
 	}
 	// log
@@ -136,7 +134,6 @@ bool RinnaiSignalDecoder::setup()
 void IRAM_ATTR RinnaiSignalDecoder::pulseISRHandler(void *arg)
 {
 	static_cast<RinnaiSignalDecoder *>(arg)->pulseISRHandler();
-	// ets_printf("isr %d\n", arg);
 }
 
 // https://www.reddit.com/r/esp32/comments/f529hf/results_comparing_the_speeds_of_different_gpio/
@@ -373,12 +370,13 @@ void RinnaiSignalDecoder::packetTaskHandler()
 // wait for signals to override then flush previously set bytes
 void RinnaiSignalDecoder::overrideTaskHandler()
 {
+	Serial.println("overrideTaskHandler started");
 	for (;;)
 	{
 		/* Wait to be notified that we need to do work. Note the first
-    	parameter is pdTRUE, which has the effect of clearing the task's notification
-    	value back to 0, making the notification value act like a binary (rather than
-    	a counting) semaphore.  */
+		parameter is pdTRUE, which has the effect of clearing the task's notification
+		value back to 0, making the notification value act like a binary (rather than
+		a counting) semaphore.  */
 		uint32_t ulNotificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
 		if (ulNotificationValue == 1)
@@ -403,23 +401,29 @@ void RinnaiSignalDecoder::writeOverridePacket()
 }
 
 // this is a bit-bang blocking function, consider other options to send pulses without blocking
-void RinnaiSignalDecoder::writePacket(const byte pin, const byte * data, const byte len) {
+void RinnaiSignalDecoder::writePacket(const byte pin, const byte *data, const byte len)
+{
 	// send init
 	gpio_set_level_IRAM(pin, HIGH);
 	delayMicroseconds(INIT_PULSE);
 	gpio_set_level_IRAM(pin, LOW);
 	// send bytes
-	for(byte i = 0; i < len; i++) {
+	for (byte i = 0; i < len; i++)
+	{
 		// send byte
-		for(byte bit = 0; bit < 8; bit++) {
+		for (byte bit = 0; bit < 8; bit++)
+		{
 			// send bit
 			const byte value = data[i] & (1 << bit);
-			if (value) {
+			if (value)
+			{
 				delayMicroseconds(SHORT_PULSE);
 				gpio_set_level_IRAM(pin, HIGH);
 				delayMicroseconds(LONG_PULSE);
 				gpio_set_level_IRAM(pin, LOW);
-			} else {
+			}
+			else
+			{
 				delayMicroseconds(LONG_PULSE);
 				gpio_set_level_IRAM(pin, HIGH);
 				delayMicroseconds(SHORT_PULSE);
