@@ -7,6 +7,7 @@ const char *DEVICE_NAME = "Rinnai Water Heater";
 const int MQTT_REPORT_FORCED_FLUSH_INTERVAL_MS = 20000; // ms
 const int STATE_JSON_MAX_SIZE = 300;
 const int CONFIG_JSON_MAX_SIZE = 500;
+const int MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS = 500; // ms, only send override if there was an original message lately
 
 RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSignalDecoder &txDecoder, MQTTClient &mqttClient, String mqttTopic, byte testPin)
 	: rxDecoder(rxDecoder), txDecoder(txDecoder), mqttClient(mqttClient), mqttTopic(mqttTopic), mqttTopicState(String(mqttTopic) + "/state"), testPin(testPin)
@@ -125,6 +126,11 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		heaterPacketCounter++;
 		lastHeaterPacketMillis = millis(); // not, this is not cycle/us accurate timing info, this is rough ms level timing
+		// init target temperature once we have reports from the heater
+		if (targetTemperatureCelsius == -1)
+		{
+			targetTemperatureCelsius = lastHeaterPacketParsed.temperatureCelsius; 
+		}
 		// act on temperature info
 		handleTemperatureSync();
 	}
@@ -162,14 +168,24 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 
 void RinnaiMQTTGateway::handleTemperatureSync()
 {
-	if (heaterPacketCounter && localControlPacketCounter && lastHeaterPacketParsed.temperatureCelsius != targetTemperatureCelsius)
+	if (heaterPacketCounter && localControlPacketCounter && targetTemperatureCelsius != -1 &&
+		lastHeaterPacketParsed.temperatureCelsius != targetTemperatureCelsius && millis() - lastHeaterPacketMillis < MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS)
 	{
 		override(lastHeaterPacketParsed.temperatureCelsius < targetTemperatureCelsius ? TEMPERATURE_UP : TEMPERATURE_DOWN);
 	}
 }
 
-void RinnaiMQTTGateway::override(OverrideCommand command)
+bool RinnaiMQTTGateway::override(OverrideCommand command)
 {
+	// check if state is valid for sending
+	unsigned long originalControlPacketAge = millis() - lastLocalControlPacketMillis;
+	if (originalControlPacketAge > MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS) // if we have no recent original packet. can happen because we send too many overrides or because no panel signal is available
+	{
+		StreamPrintf(Serial, "No fresh original data for override command %d, age %d\n", command, originalControlPacketAge);
+		return false;
+	}
+	// StreamPrintf(Serial, "Attempting override command %d, age %d\n", command, originalControlPacketAge);
+	// prep buffer
 	byte buf[RinnaiSignalDecoder::BYTES_IN_PACKET];
 	memcpy(buf, lastLocalControlPacketBytes, RinnaiSignalDecoder::BYTES_IN_PACKET);
 	switch (command)
@@ -188,13 +204,15 @@ void RinnaiMQTTGateway::override(OverrideCommand command)
 		break;
 	default:
 		Serial.println("Unknown command for override");
-		return;
+		return false;
 	}
 	bool overRet = txDecoder.setOverridePacket(buf, RinnaiSignalDecoder::BYTES_IN_PACKET);
 	if (overRet == false)
 	{
 		Serial.println("Error setting override");
+		return false;
 	}
+	return true;
 }
 
 void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload)

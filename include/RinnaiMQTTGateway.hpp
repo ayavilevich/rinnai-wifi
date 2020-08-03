@@ -35,7 +35,7 @@ private:
 	// private functions
 	bool handleIncomingPacketQueueItem(const PacketQueueItem & item, bool remote);
 	void handleTemperatureSync();
-	void override(OverrideCommand command);
+	bool override(OverrideCommand command);
 
 	// properties
 	RinnaiSignalDecoder & rxDecoder;
