@@ -3,12 +3,13 @@
 #include "RinnaiMQTTGateway.hpp"
 #include "StreamPrintf.hpp"
 
-const byte OVERRIDE_TEST_DATA[RinnaiSignalDecoder::BYTES_IN_PACKET] = {0x02, 0x00, 0x00, 0x7f, 0xbf, 0xc2};
+const char *DEVICE_NAME = "Rinnai Water Heater";
 const int MQTT_REPORT_FORCED_FLUSH_INTERVAL_MS = 20000; // ms
 const int STATE_JSON_MAX_SIZE = 300;
+const int CONFIG_JSON_MAX_SIZE = 500;
 
-RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSignalDecoder &txDecoder, MQTTClient &mqttClient, String mqttTopicState, byte testPin)
-	: rxDecoder(rxDecoder), txDecoder(txDecoder), mqttClient(mqttClient), mqttTopicState(mqttTopicState), testPin(testPin)
+RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSignalDecoder &txDecoder, MQTTClient &mqttClient, String mqttTopic, byte testPin)
+	: rxDecoder(rxDecoder), txDecoder(txDecoder), mqttClient(mqttClient), mqttTopic(mqttTopic), mqttTopicState(String(mqttTopic) + "/state"), testPin(testPin)
 {
 }
 
@@ -65,10 +66,11 @@ void RinnaiMQTTGateway::loop()
 	doc["testPin"] = digitalRead(testPin) == LOW ? "ON" : "OFF";
 	if (heaterPacketCounter)
 	{
-		doc["temperature"] = lastHeaterPacketParsed.temperatureCelsius;
+		doc["currentTemperature"] = lastHeaterPacketParsed.temperatureCelsius;
+		doc["targetTemperature"] = targetTemperatureCelsius;
 		doc["activeId"] = lastHeaterPacketParsed.activeId;
-		doc["inUse"] = lastHeaterPacketParsed.inUse;
-		doc["on"] = lastHeaterPacketParsed.on;
+		doc["mode"] = lastHeaterPacketParsed.on ? "heating" : "off";
+		doc["action"] = lastHeaterPacketParsed.inUse ? "heating" : (lastHeaterPacketParsed.on ? "idle" : "off");
 		doc["heaterBytes"] = RinnaiProtocolDecoder::renderPacket(lastHeaterPacketBytes);
 	}
 	if (localControlPacketCounter)
@@ -86,7 +88,7 @@ void RinnaiMQTTGateway::loop()
 		bool ret = mqttClient.publish(mqttTopicState, payload);
 		if (!ret)
 		{
-			Serial.println("Error publishing a MQTT message");
+			Serial.println("Error publishing a state MQTT message");
 		}
 		lastMqttReportMillis = now;
 		lastMqttReportPayload = payload;
@@ -123,6 +125,8 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		heaterPacketCounter++;
 		lastHeaterPacketMillis = millis(); // not, this is not cycle/us accurate timing info, this is rough ms level timing
+		// act on temperature info
+		handleTemperatureSync();
 	}
 	else if (source == CONTROL)
 	{
@@ -156,8 +160,46 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 	return true;
 }
 
-void RinnaiMQTTGateway::mqttMessageReceived(String &fullTopic, String &payload)
+void RinnaiMQTTGateway::handleTemperatureSync()
 {
+	if (heaterPacketCounter && localControlPacketCounter && lastHeaterPacketParsed.temperatureCelsius != targetTemperatureCelsius)
+	{
+		override(lastHeaterPacketParsed.temperatureCelsius < targetTemperatureCelsius ? TEMPERATURE_UP : TEMPERATURE_DOWN);
+	}
+}
+
+void RinnaiMQTTGateway::override(OverrideCommand command)
+{
+	byte buf[RinnaiSignalDecoder::BYTES_IN_PACKET];
+	memcpy(buf, lastLocalControlPacketBytes, RinnaiSignalDecoder::BYTES_IN_PACKET);
+	switch (command)
+	{
+	case ON_OFF:
+		RinnaiProtocolDecoder::setOnOffPressed(buf);
+		break;
+	case PRIORITY:
+		RinnaiProtocolDecoder::setPriorityPressed(buf);
+		break;
+	case TEMPERATURE_UP:
+		RinnaiProtocolDecoder::setTemperatureUpPressed(buf);
+		break;
+	case TEMPERATURE_DOWN:
+		RinnaiProtocolDecoder::setTemperatureDownPressed(buf);
+		break;
+	default:
+		Serial.println("Unknown command for override");
+		return;
+	}
+	bool overRet = txDecoder.setOverridePacket(buf, RinnaiSignalDecoder::BYTES_IN_PACKET);
+	if (overRet == false)
+	{
+		Serial.println("Error setting override");
+	}
+}
+
+void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload)
+{
+	// parse topic
 	String topic;
 	int index = fullTopic.lastIndexOf('/');
 	if (index != -1)
@@ -169,33 +211,93 @@ void RinnaiMQTTGateway::mqttMessageReceived(String &fullTopic, String &payload)
 		topic = fullTopic;
 	}
 
+	// ignore what we send
+	if (topic == "config" || topic == "state")
+	{
+		return;
+	}
+
+	// log
 	StreamPrintf(Serial, "Incoming: %s %s - %s\n", fullTopic.c_str(), topic.c_str(), payload.c_str());
 
-	if (topic == "status")
+	// handle command
+	if (topic == "temp")
 	{
-		// ignore
+		// parse and verify targetTemperature
+		int temp = atoi(payload.c_str());
+		temp = min(temp, (int)RinnaiProtocolDecoder::TEMP_C_MAX);
+		temp = max(temp, (int)RinnaiProtocolDecoder::TEMP_C_MIN);
+		StreamPrintf(Serial, "Setting %d as target temperature\n", temp);
+		targetTemperatureCelsius = temp;
+	}
+	else if (topic == "mode")
+	{
+		if ((payload == "off" && lastHeaterPacketParsed.on) || (payload == "heat" && !lastHeaterPacketParsed.on))
+		{
+			override(ON_OFF);
+		}
 	}
 	else if (topic == "override")
 	{
-		bool overRet = txDecoder.setOverridePacket(OVERRIDE_TEST_DATA, RinnaiSignalDecoder::BYTES_IN_PACKET);
-		if (overRet == false)
-		{
-			Serial.println("Error setting override");
-		}
+		override(PRIORITY);
 	}
 	else if (topic == "debug")
 	{
-		if (debugLevel == NONE)
+		if (payload == "NONE")
+		{
+			debugLevel = NONE;
+		}
+		else if (payload == "PARSED")
 		{
 			debugLevel = PARSED;
 		}
-		else
+		else if (payload == "RAW")
 		{
-			debugLevel = NONE;
+			debugLevel = RAW;
 		}
 	}
 	else
 	{
 		StreamPrintf(Serial, "Unknown topic: %s\n", topic.c_str());
+	}
+}
+
+void RinnaiMQTTGateway::onMqttConnected()
+{
+	// subscribe
+	bool ret = mqttClient.subscribe(mqttTopic + "/#");
+	if (!ret)
+	{
+		Serial.println("Error doing a MQTT subscribe");
+	}
+
+	// send a '/config' topic to achieve MQTT discovery - https://www.home-assistant.io/docs/mqtt/discovery/
+	DynamicJsonDocument doc(CONFIG_JSON_MAX_SIZE);
+	doc["~"] = mqttTopic;
+	doc["name"] = DEVICE_NAME;
+	doc["action_topic"] = "~/state";
+	doc["action_template"] = "{{ value_json.action }}";
+	doc["current_temperature_topic"] = "~/state";
+	doc["current_temperature_template"] = "{{ value_json.currentTemperature }}";
+	doc["max_temp"] = RinnaiProtocolDecoder::TEMP_C_MAX;
+	doc["min_temp"] = RinnaiProtocolDecoder::TEMP_C_MIN;
+	doc["initial"] = RinnaiProtocolDecoder::TEMP_C_MIN;
+	doc["mode_command_topic"] = "~/mode";
+	doc["mode_state_topic"] = "~/state";
+	doc["mode_state_template"] = "{{ value_json.mode }}";
+	doc["modes"][0] = "off";
+	doc["modes"][1] = "heat";
+	doc["precision"] = 1;
+	doc["temperature_command_topic"] = "~/temp";
+	doc["temperature_unit"] = "C";
+	doc["temperature_state_topic"] = "~/state";
+	doc["temperature_state_template"] = "{{ value_json.targetTemperature }}";
+	String payload;
+	serializeJson(doc, payload);
+	StreamPrintf(Serial, "Sending on MQTT channel '%s/config': %d bytes, %s\n", mqttTopic.c_str(), payload.length(), payload.c_str());
+	ret = mqttClient.publish(mqttTopic + "/config", payload);
+	if (!ret)
+	{
+		Serial.println("Error publishing a config MQTT message");
 	}
 }

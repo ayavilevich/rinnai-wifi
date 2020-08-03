@@ -14,15 +14,18 @@
 #endif
 
 // hardcoded settings (TODO, move to separate config or to the ini)
-// -- Initial name of the Thing. Used e.g. as SSID of the own Access Point.
-const char thingName[] = "rinnai-wifi";
-// -- Initial password to connect to the Thing, when it creates an own Access Point.
-const char wifiInitialApPassword[] = "rinnairinnai"; // must be over 8 characters
+// Initial name of the Thing. Used e.g. as SSID of the own Access Point.
+const char THING_NAME[] = "rinnai-wifi";
+// Initial password to connect to the Thing, when it creates an own Access Point.
+const char WIFI_INITIAL_AP_PASSWORD[] = "rinnairinnai"; // must be over 8 characters
 // OTA password
-const char OTAPassword[] = "rinnairinnai";
+const char OTA_PASSWORD[] = "rinnairinnai";
+// Thing will stay in AP mode for an amount of time on boot, before retrying to connect to a WiFi network.
+const int AP_MODE_TIMEOUT_MS = 5000;
+
 // MQTT topic prefix
-const char mqttTopic[] = "homeassistant/climate/rinnai";
-const int MQTT_PACKET_MAX_SIZE = 300;
+const char MQTT_TOPIC[] = "homeassistant/climate/rinnai";
+const int MQTT_PACKET_MAX_SIZE = 700; // the config message is rather large, keep enough space
 
 // max configuration paramter length
 #define CONFIG_PARAM_MAX_LEN 128
@@ -44,14 +47,12 @@ const int MQTT_PACKET_MAX_SIZE = 300;
 // main objects
 DNSServer dnsServer;
 WebServer server(80);
-IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CONFIG_VERSION);
+IotWebConf iotWebConf(THING_NAME, &dnsServer, &server, WIFI_INITIAL_AP_PASSWORD, CONFIG_VERSION);
 WiFiClient net;
 MQTTClient mqttClient(MQTT_PACKET_MAX_SIZE);
-String mqttTopicState(String(mqttTopic) + "/status");
-String mqttTopicSubscribe(String(mqttTopic) + "/#");
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
 RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN);
-RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, mqttTopicState, TEST_PIN);
+RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, MQTT_TOPIC, TEST_PIN);
 
 // state
 boolean needReset = false;
@@ -77,7 +78,7 @@ void configSaved();
 boolean formValidator();
 boolean connectMqtt();
 boolean connectMqttOptions();
-void mqttMessageReceived(String &topic, String &payload);
+void onMqttMessageReceived(String &topic, String &payload);
 
 // code
 void setup()
@@ -118,6 +119,7 @@ void setupWifiManager()
 	iotWebConf.setConfigSavedCallback(&configSaved);
 	iotWebConf.setFormValidator(&formValidator);
 	iotWebConf.setWifiConnectionCallback(&wifiConnected);
+	iotWebConf.setApTimeoutMs(AP_MODE_TIMEOUT_MS); // try to shorten the time the device is in AP mode on boot
 
 	// -- Initializing the configuration.
 	boolean validConfig = iotWebConf.init();
@@ -141,10 +143,10 @@ void setupOTA()
 	// ArduinoOTA.setPort(3232);
 
 	// Hostname defaults to esp3232-[MAC]
-	ArduinoOTA.setHostname(thingName);
+	ArduinoOTA.setHostname(THING_NAME);
 
 	// No authentication by default
-	ArduinoOTA.setPassword(OTAPassword);
+	ArduinoOTA.setPassword(OTA_PASSWORD);
 
 	// Password can be set with it's md5 value as well
 	// MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
@@ -189,7 +191,7 @@ void setupOTA()
 void setupMqtt()
 {
 	mqttClient.begin(mqttServerValue, net); // use default port = 1883
-	mqttClient.onMessage(mqttMessageReceived);
+	mqttClient.onMessage(onMqttMessageReceived);
 }
 
 void loop()
@@ -297,9 +299,7 @@ boolean connectMqtt()
 	}
 	Serial.println("Connected!");
 
-	mqttClient.subscribe(mqttTopicSubscribe);
-
-	// TODO, send a '/config' topic to achieve MQTT discovery - https://www.home-assistant.io/docs/mqtt/discovery/
+	rinnaiMqttGateway.onMqttConnected();
 	return true;
 }
 
@@ -329,9 +329,9 @@ boolean connectMqttOptions()
 	return result;
 }
 
-void mqttMessageReceived(String &topic, String &payload)
+void onMqttMessageReceived(String &topic, String &payload)
 {
-	rinnaiMqttGateway.mqttMessageReceived(topic, payload);
+	rinnaiMqttGateway.onMqttMessageReceived(topic, payload);
 
 	// Note: Do not use the client in the callback to publish, subscribe or
 	// unsubscribe as it may cause deadlocks when other things arrive while

@@ -13,26 +13,39 @@ enum DebugLevel
 	RAW,
 };
 
+enum OverrideCommand
+{
+	ON_OFF,
+	PRIORITY,
+	TEMPERATURE_UP,
+	TEMPERATURE_DOWN,
+};
+
 // this class will handle the logic of converting between MQTT commands and Rinnai packets
 class RinnaiMQTTGateway
 {
 public:
-	RinnaiMQTTGateway(RinnaiSignalDecoder & rxDecoder, RinnaiSignalDecoder & txDecoder, MQTTClient & mqttClient, String mqttTopicState, byte testPin);
+	RinnaiMQTTGateway(RinnaiSignalDecoder & rxDecoder, RinnaiSignalDecoder & txDecoder, MQTTClient & mqttClient, String mqttTopic, byte testPin);
 
 	void loop();
-	void mqttMessageReceived(String &topic, String &payload);
+	void onMqttMessageReceived(String &topic, String &payload);
+	void onMqttConnected();
 
 private:
 	// private functions
 	bool handleIncomingPacketQueueItem(const PacketQueueItem & item, bool remote);
+	void handleTemperatureSync();
+	void override(OverrideCommand command);
 
 	// properties
 	RinnaiSignalDecoder & rxDecoder;
 	RinnaiSignalDecoder & txDecoder;
 	MQTTClient & mqttClient;
+	String mqttTopic;
 	String mqttTopicState;
 	byte testPin;
 	DebugLevel debugLevel = NONE;
+	int targetTemperatureCelsius = -1;
 
 	unsigned long lastMqttReportMillis = 0;
 	String lastMqttReportPayload;

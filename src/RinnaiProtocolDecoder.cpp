@@ -1,9 +1,5 @@
 #include "RinnaiProtocolDecoder.hpp"
 
-// temperatures allowed to set with this code (linear range)
-const byte TEMP_C_MIN = 37;
-const byte TEMP_C_MAX = 48;
-
 const byte TEMP_MAX_CODE = 0xe; // the max valid code
 const byte TEMP_CODE[] = {37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 50, 55, 60};
 
@@ -83,7 +79,7 @@ bool RinnaiProtocolDecoder::temperatureCodeToTemperatureCelsius(byte code, byte 
 }
 
 // assume packet passed getPacketSource
-String RinnaiProtocolDecoder::renderPacket(const byte * data)
+String RinnaiProtocolDecoder::renderPacket(const byte *data)
 {
 	char result[BYTES_IN_PACKET * 3];
 	snprintf(result, BYTES_IN_PACKET * 3, "%02x,%02x,%02x,%02x,%02x", data[0] & 0x7f, data[1] & 0x7f, data[2] & 0x7f, data[3] & 0x7f, data[4] & 0x7f);
@@ -96,7 +92,7 @@ void RinnaiProtocolDecoder::calcAndSetChecksum(byte *data)
 	for (int i = 0; i < BYTES_IN_PACKET - 1; i++)
 	{
 		// recalc parity for byte
-		data[i] &= 0x7f; // remove parity bit
+		data[i] &= 0x7f;							   // remove parity bit
 		data[i] |= isOddParity(data[i]) ? 0x00 : 0x80; // turn on parity bit if needed
 		// update checksum
 		checksum ^= data[i];
@@ -107,5 +103,23 @@ void RinnaiProtocolDecoder::calcAndSetChecksum(byte *data)
 void RinnaiProtocolDecoder::setOnOffPressed(byte *data)
 {
 	data[1] |= 0x01; // set button bit
+	calcAndSetChecksum(data);
+}
+
+void RinnaiProtocolDecoder::setPriorityPressed(byte *data)
+{
+	data[1] |= 0x04; // set button bit
+	calcAndSetChecksum(data);
+}
+
+void RinnaiProtocolDecoder::setTemperatureUpPressed(byte *data)
+{
+	data[2] |= 0x01; // set button bit
+	calcAndSetChecksum(data);
+}
+
+void RinnaiProtocolDecoder::setTemperatureDownPressed(byte *data)
+{
+	data[2] |= 0x02; // set button bit
 	calcAndSetChecksum(data);
 }

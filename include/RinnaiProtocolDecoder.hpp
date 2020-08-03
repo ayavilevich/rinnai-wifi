@@ -34,6 +34,9 @@ class RinnaiProtocolDecoder
 {
 public:
 	static const int BYTES_IN_PACKET = 6;
+	// temperatures allowed to set with this code (linear range)
+	static const byte TEMP_C_MIN = 37;
+	static const byte TEMP_C_MAX = 48;
 
 	static RinnaiPacketSource getPacketSource(const byte * data, int length);
 	static bool decodeHeaterPacket(const byte * data, RinnaiHeaterPacket &packet);
@@ -41,6 +44,9 @@ public:
 	static String renderPacket(const byte * data);
 
 	static void setOnOffPressed(byte * data);
+	static void setPriorityPressed(byte * data);
+	static void setTemperatureUpPressed(byte * data);
+	static void setTemperatureDownPressed(byte * data);
 
 private:
 	static bool temperatureCodeToTemperatureCelsius(byte code, byte & temperature);
