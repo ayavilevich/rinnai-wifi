@@ -4,8 +4,8 @@
 #include "StreamPrintf.hpp"
 
 const byte OVERRIDE_TEST_DATA[RinnaiSignalDecoder::BYTES_IN_PACKET] = {0x02, 0x00, 0x00, 0x7f, 0xbf, 0xc2};
-const int MQTT_REPORT_INTERVAL_MS = 500; // ms
-const int STATE_JSON_MAX_SIZE = 100;
+const int MQTT_REPORT_FORCED_FLUSH_INTERVAL_MS = 20000; // ms
+const int STATE_JSON_MAX_SIZE = 300;
 
 RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSignalDecoder &txDecoder, MQTTClient &mqttClient, String mqttTopicState, byte testPin)
 	: rxDecoder(rxDecoder), txDecoder(txDecoder), mqttClient(mqttClient), mqttTopicState(mqttTopicState), testPin(testPin)
@@ -59,44 +59,41 @@ void RinnaiMQTTGateway::loop()
 		}
 	}
 
-	// set test override packet once in a while
-	static int counterOver = 0;
-	if (counterOver == 0)
-	{
-		bool overRet = txDecoder.setOverridePacket(OVERRIDE_TEST_DATA, RinnaiSignalDecoder::BYTES_IN_PACKET);
-		if (overRet == false)
-		{
-			Serial.println("Error setting override");
-		}
-	}
-	counterOver++;
-	counterOver %= 10;
-
 	// MQTT payload generation and flushing
-	unsigned long now = millis();
-	if ((MQTT_REPORT_INTERVAL_MS < now - lastMqttReport) && mqttClient.connected())
+	// render payload
+	DynamicJsonDocument doc(STATE_JSON_MAX_SIZE);
+	doc["testPin"] = digitalRead(testPin) == LOW ? "ON" : "OFF";
+	if (heaterPacketCounter)
 	{
-		// send pin status if changed
-		if (testPinState != digitalRead(testPin)) // has changed
+		doc["temperature"] = lastHeaterPacketParsed.temperatureCelsius;
+		doc["activeId"] = lastHeaterPacketParsed.activeId;
+		doc["inUse"] = lastHeaterPacketParsed.inUse;
+		doc["on"] = lastHeaterPacketParsed.on;
+		doc["heaterBytes"] = RinnaiProtocolDecoder::renderPacket(lastHeaterPacketBytes);
+	}
+	if (localControlPacketCounter)
+	{
+		doc["controlId"] = lastLocalControlPacketParsed.myId;
+		doc["controlBytes"] = RinnaiProtocolDecoder::renderPacket(lastLocalControlPacketBytes);
+	}
+	String payload;
+	serializeJson(doc, payload);
+	// check if to send
+	unsigned long now = millis();
+	if (mqttClient.connected() && (now - lastMqttReportMillis > MQTT_REPORT_FORCED_FLUSH_INTERVAL_MS || payload != lastMqttReportPayload))
+	{
+		StreamPrintf(Serial, "Sending on MQTT channel '%s': %s\n", mqttTopicState.c_str(), payload.c_str());
+		bool ret = mqttClient.publish(mqttTopicState, payload);
+		if (!ret)
 		{
-			testPinState = 1 - testPinState; // invert pin state as it is changed
-			StreamPrintf(Serial, "Sending on MQTT channel '%s': %s\n", mqttTopicState.c_str(), testPinState == LOW ? "ON" : "OFF");
-			DynamicJsonDocument doc(STATE_JSON_MAX_SIZE);
-			doc["time"] = now;
-			doc["testPin"] = testPinState == LOW ? "ON" : "OFF";
-			if (heaterPacketCounter)
-			{
-				doc["temperature"] = lastHeaterPacket.temperatureCelsius;
-			}
-			String docSerialized;
-			serializeJson(doc, docSerialized);
-			mqttClient.publish(mqttTopicState, docSerialized);
-			lastMqttReport = now;
+			Serial.println("Error publishing a MQTT message");
 		}
+		lastMqttReportMillis = now;
+		lastMqttReportPayload = payload;
 	}
 
 	// delay to not over flood the serial interface
-	delay(100);
+	// delay(100);
 }
 
 bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &item, bool remote)
@@ -118,8 +115,12 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		{
 			return false;
 		}
-		StreamPrintf(Serial, "Heater packet: a=%d o=%d u=%d t=%d\n", packet.activeId, packet.on, packet.inUse, packet.temperatureCelsius);
-		memcpy(&lastHeaterPacket, &packet, sizeof(RinnaiHeaterPacket));
+		if (debugLevel == PARSED)
+		{
+			StreamPrintf(Serial, "Heater packet: a=%d o=%d u=%d t=%d\n", packet.activeId, packet.on, packet.inUse, packet.temperatureCelsius);
+		}
+		memcpy(&lastHeaterPacketParsed, &packet, sizeof(RinnaiHeaterPacket));
+		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		heaterPacketCounter++;
 		lastHeaterPacketMillis = millis(); // not, this is not cycle/us accurate timing info, this is rough ms level timing
 	}
@@ -131,7 +132,10 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		{
 			return false;
 		}
-		StreamPrintf(Serial, "Control packet: r=%d i=%d o=%d p=%d td=%d tu=%d\n", remote, packet.myId, packet.onOffPressed, packet.priorityPressed, packet.temperatureDownPressed, packet.temperatureUpPressed);
+		if (debugLevel == PARSED)
+		{
+			StreamPrintf(Serial, "Control packet: r=%d i=%d o=%d p=%d td=%d tu=%d\n", remote, packet.myId, packet.onOffPressed, packet.priorityPressed, packet.temperatureDownPressed, packet.temperatureUpPressed);
+		}
 		if (remote)
 		{
 			remoteControlPacketCounter++;
@@ -139,7 +143,8 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		}
 		else
 		{
-			memcpy(&lastLocalControlPacket, &packet, sizeof(RinnaiControlPacket));
+			memcpy(&lastLocalControlPacketParsed, &packet, sizeof(RinnaiControlPacket));
+			memcpy(lastLocalControlPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 			localControlPacketCounter++;
 			lastLocalControlPacketMillis = millis();
 		}
@@ -151,7 +156,46 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 	return true;
 }
 
-void RinnaiMQTTGateway::mqttMessageReceived(String &topic, String &payload)
+void RinnaiMQTTGateway::mqttMessageReceived(String &fullTopic, String &payload)
 {
-	Serial.println("Incoming: " + topic + " - " + payload);
+	String topic;
+	int index = fullTopic.lastIndexOf('/');
+	if (index != -1)
+	{
+		topic = fullTopic.substring(index + 1);
+	}
+	else
+	{
+		topic = fullTopic;
+	}
+
+	StreamPrintf(Serial, "Incoming: %s %s - %s\n", fullTopic.c_str(), topic.c_str(), payload.c_str());
+
+	if (topic == "status")
+	{
+		// ignore
+	}
+	else if (topic == "override")
+	{
+		bool overRet = txDecoder.setOverridePacket(OVERRIDE_TEST_DATA, RinnaiSignalDecoder::BYTES_IN_PACKET);
+		if (overRet == false)
+		{
+			Serial.println("Error setting override");
+		}
+	}
+	else if (topic == "debug")
+	{
+		if (debugLevel == NONE)
+		{
+			debugLevel = PARSED;
+		}
+		else
+		{
+			debugLevel = NONE;
+		}
+	}
+	else
+	{
+		StreamPrintf(Serial, "Unknown topic: %s\n", topic.c_str());
+	}
 }

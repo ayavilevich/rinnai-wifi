@@ -82,6 +82,14 @@ bool RinnaiProtocolDecoder::temperatureCodeToTemperatureCelsius(byte code, byte 
 	return true;
 }
 
+// assume packet passed getPacketSource
+String RinnaiProtocolDecoder::renderPacket(const byte * data)
+{
+	char result[BYTES_IN_PACKET * 3];
+	snprintf(result, BYTES_IN_PACKET * 3, "%02x,%02x,%02x,%02x,%02x", data[0] & 0x7f, data[1] & 0x7f, data[2] & 0x7f, data[3] & 0x7f, data[4] & 0x7f);
+	return result;
+}
+
 void RinnaiProtocolDecoder::calcAndSetChecksum(byte *data)
 {
 	byte checksum = 0;

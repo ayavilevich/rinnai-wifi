@@ -38,6 +38,7 @@ public:
 	static RinnaiPacketSource getPacketSource(const byte * data, int length);
 	static bool decodeHeaterPacket(const byte * data, RinnaiHeaterPacket &packet);
 	static bool decodeControlPacket(const byte * data, RinnaiControlPacket &packet);
+	static String renderPacket(const byte * data);
 
 	static void setOnOffPressed(byte * data);
 

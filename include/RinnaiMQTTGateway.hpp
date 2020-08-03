@@ -6,6 +6,13 @@
 #include "RinnaiSignalDecoder.hpp"
 #include "RinnaiProtocolDecoder.hpp"
 
+enum DebugLevel
+{
+	NONE,
+	PARSED,
+	RAW,
+};
+
 // this class will handle the logic of converting between MQTT commands and Rinnai packets
 class RinnaiMQTTGateway
 {
@@ -25,12 +32,15 @@ private:
 	MQTTClient & mqttClient;
 	String mqttTopicState;
 	byte testPin;
+	DebugLevel debugLevel = NONE;
 
-	unsigned long lastMqttReport = 0;
-	int testPinState = HIGH;
+	unsigned long lastMqttReportMillis = 0;
+	String lastMqttReportPayload;
 
-	RinnaiHeaterPacket lastHeaterPacket;
-	RinnaiControlPacket lastLocalControlPacket;
+	byte lastHeaterPacketBytes[RinnaiProtocolDecoder::BYTES_IN_PACKET];
+	byte lastLocalControlPacketBytes[RinnaiProtocolDecoder::BYTES_IN_PACKET];
+	RinnaiHeaterPacket lastHeaterPacketParsed;
+	RinnaiControlPacket lastLocalControlPacketParsed;
 	int heaterPacketCounter = 0;
 	int localControlPacketCounter = 0;
 	int remoteControlPacketCounter = 0;

@@ -8,7 +8,7 @@
 #include "RinnaiMQTTGateway.hpp"
 #include "StreamPrintf.hpp"
 
-// confirn required parameters passed from the ini
+// confirm required parameters passed from the ini
 #ifndef SERIAL_BAUD
 #error Need to pass SERIAL_BAUD
 #endif
@@ -22,6 +22,7 @@ const char wifiInitialApPassword[] = "rinnairinnai"; // must be over 8 character
 const char OTAPassword[] = "rinnairinnai";
 // MQTT topic prefix
 const char mqttTopic[] = "homeassistant/climate/rinnai";
+const int MQTT_PACKET_MAX_SIZE = 300;
 
 // max configuration paramter length
 #define CONFIG_PARAM_MAX_LEN 128
@@ -31,7 +32,7 @@ const char mqttTopic[] = "homeassistant/climate/rinnai";
 //      password to build an AP. (E.g. in case of lost password)
 #define CONFIG_PIN 4
 // Pin whose state to send over mqtt
-#define MQTT_PIN 0
+#define TEST_PIN 0
 // -- Status indicator pin.
 //      First it will light up (kept LOW), on Wifi connection it will blink,
 //      when connected to the Wifi it will turn off (kept HIGH).
@@ -45,12 +46,12 @@ DNSServer dnsServer;
 WebServer server(80);
 IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CONFIG_VERSION);
 WiFiClient net;
-MQTTClient mqttClient;
+MQTTClient mqttClient(MQTT_PACKET_MAX_SIZE);
 String mqttTopicState(String(mqttTopic) + "/status");
 String mqttTopicSubscribe(String(mqttTopic) + "/#");
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
 RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN);
-RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, mqttTopicState, MQTT_PIN);
+RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, mqttTopicState, TEST_PIN);
 
 // state
 boolean needReset = false;
@@ -104,7 +105,10 @@ void setup()
 
 void setupWifiManager()
 {
-	// StreamPrintf(Serial, "Config pin: %d\n", digitalRead(CONFIG_PIN));
+	//StreamPrintf(Serial, "Config pin: %d\n", digitalRead(CONFIG_PIN));
+	// setup CONFIG pin ourselves otherwise pullup wasn't ready by the time iotWebConf tried to use it
+	pinMode(CONFIG_PIN, INPUT_PULLUP);
+	delay(1);
 	// -- Initializing the configuration.
 	iotWebConf.setStatusPin(STATUS_PIN);
 	iotWebConf.setConfigPin(CONFIG_PIN);
