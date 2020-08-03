@@ -304,6 +304,7 @@ void RinnaiSignalDecoder::packetTaskHandler()
 	packet.startCycle = 0;
 	packet.validPre = false;
 	packet.validChecksum = false;
+	packet.validParity = false;
 	memset(packet.data, 0, sizeof(packet.data));
 
 	for (;;)
@@ -338,11 +339,21 @@ void RinnaiSignalDecoder::packetTaskHandler()
 				packet.startCycle = bit.startCycle;
 				packet.validPre = bit.bit == PRE;
 				packet.validChecksum = false;
+				packet.validParity = false;
 				memset(packet.data, 0, sizeof(packet.data));
 			}
 			// see if we completed a packet
 			if (packet.bitsPresent == BITS_IN_PACKET)
 			{
+				// check parity (each data byte has “odd parity bit” as the MSB bit)
+				packet.validParity = true; // be optimistic
+				for (int i = 0; i < BYTES_IN_PACKET - 1; i++)
+				{
+					if (!isOddParity(packet.data[i]))
+					{
+						packet.validParity = false;
+					}
+				}
 				// check checksum (last byte is xor of first 5 bytes)
 				byte checksum = 0;
 				for (int i = 0; i < BYTES_IN_PACKET; i++)
@@ -361,10 +372,20 @@ void RinnaiSignalDecoder::packetTaskHandler()
 				packet.bitsPresent = 0;
 				packet.validPre = false;
 				packet.validChecksum = false;
+				packet.validParity = false;
 				memset(packet.data, 0, sizeof(packet.data));
 			}
 		}
 	}
+}
+
+bool RinnaiSignalDecoder::isOddParity(byte b)
+{
+	// https://stackoverflow.com/questions/21617970/how-to-check-if-value-has-even-parity-of-bits-or-odd
+	b ^= b >> 4;
+	b ^= b >> 2;
+	b ^= b >> 1;
+	return b & 1;
 }
 
 // wait for signals to override then flush previously set bytes

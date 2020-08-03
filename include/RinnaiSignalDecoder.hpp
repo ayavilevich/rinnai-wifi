@@ -50,7 +50,8 @@ private:
 	void packetTaskHandler();
 	void overrideTaskHandler();
 	void writeOverridePacket();
-	void writePacket(const byte pin, const byte * data, const byte len);
+	static void writePacket(const byte pin, const byte * data, const byte len);
+	static bool isOddParity(byte b);
 
 	// properties
 	byte pin = INVALID_PIN;
@@ -100,4 +101,5 @@ struct PacketQueueItem
 	byte bitsPresent;
 	bool validPre;
 	bool validChecksum;
+	bool validParity;
 };

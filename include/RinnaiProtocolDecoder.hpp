@@ -44,4 +44,5 @@ public:
 private:
 	static bool temperatureCodeToTemperatureCelsius(byte code, byte & temperature);
 	static void calcAndSetChecksum(byte * data);
+	static bool isOddParity(byte b);
 };
