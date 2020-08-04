@@ -1,5 +1,6 @@
 #include <ArduinoJson.h>
 
+#include "LogStream.hpp"
 #include "RinnaiMQTTGateway.hpp"
 
 const char *DEVICE_NAME = "Rinnai Water Heater";
@@ -16,9 +17,9 @@ RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSigna
 void RinnaiMQTTGateway::loop()
 {
 	// low level rinnai decoding monitoring
-	// Serial.printf("rx errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
+	// logStream().printf("rx errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
 	/*
-	Serial.printf("rx pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
+	logStream().printf("rx pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
 	static unsigned long lastPulseTime = 0;
 	while (uxQueueMessagesWaiting(rxDecoder.getPulseQueue()))
 	{
@@ -27,36 +28,36 @@ void RinnaiMQTTGateway::loop()
 		// hack delta
 		unsigned long d = clockCyclesToMicroseconds(item.cycle - lastPulseTime);
 		lastPulseTime = item.cycle;
-		Serial.printf("rx p %d %d, q %d, r %d\n", item.newLevel, d, uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), ret);
+		logStream().printf("rx p %d %d, q %d, r %d\n", item.newLevel, d, uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), ret);
 	}
-	Serial.printf("rx bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
+	logStream().printf("rx bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
 	while (uxQueueMessagesWaiting(rxDecoder.getBitQueue()))
 	{
 		BitQueueItem item;
 		BaseType_t ret = xQueueReceive(rxDecoder.getBitQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
-		Serial.printf("rx b %d %d %d, q %d, r %d\n", item.bit, item.startCycle, item.misc, uxQueueMessagesWaiting(rxDecoder.getBitQueue()), ret);
+		logStream().printf("rx b %d %d %d, q %d, r %d\n", item.bit, item.startCycle, item.misc, uxQueueMessagesWaiting(rxDecoder.getBitQueue()), ret);
 	}
 	*/
-	// Serial.printf("rx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
+	// logStream().printf("rx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
 	while (uxQueueMessagesWaiting(rxDecoder.getPacketQueue()))
 	{
 		PacketQueueItem item;
 		BaseType_t ret = xQueueReceive(rxDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
 		if (handleIncomingPacketQueueItem(item, true) == false)
 		{
-			Serial.printf("rx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
+			logStream().printf("rx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
 		}
 	}
 
-	// Serial.printf("tx errors: pulse %d, bit %d, packet %d\n", txDecoder.getPulseHandlerErrorCounter(), txDecoder.getBitTaskErrorCounter(), txDecoder.getPacketTaskErrorCounter());
-	// Serial.printf("tx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getPacketQueue()), uxQueueSpacesAvailable(txDecoder.getPacketQueue()));
+	// logStream().printf("tx errors: pulse %d, bit %d, packet %d\n", txDecoder.getPulseHandlerErrorCounter(), txDecoder.getBitTaskErrorCounter(), txDecoder.getPacketTaskErrorCounter());
+	// logStream().printf("tx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getPacketQueue()), uxQueueSpacesAvailable(txDecoder.getPacketQueue()));
 	while (uxQueueMessagesWaiting(txDecoder.getPacketQueue()))
 	{
 		PacketQueueItem item;
 		BaseType_t ret = xQueueReceive(txDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
 		if (handleIncomingPacketQueueItem(item, false) == false)
 		{
-			Serial.printf("tx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
+			logStream().printf("tx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
 		}
 	}
 
@@ -84,11 +85,11 @@ void RinnaiMQTTGateway::loop()
 	unsigned long now = millis();
 	if (mqttClient.connected() && (now - lastMqttReportMillis > MQTT_REPORT_FORCED_FLUSH_INTERVAL_MS || payload != lastMqttReportPayload))
 	{
-		Serial.printf("Sending on MQTT channel '%s': %s\n", mqttTopicState.c_str(), payload.c_str());
+		logStream().printf("Sending on MQTT channel '%s': %s\n", mqttTopicState.c_str(), payload.c_str());
 		bool ret = mqttClient.publish(mqttTopicState, payload);
 		if (!ret)
 		{
-			Serial.println("Error publishing a state MQTT message");
+			logStream().println("Error publishing a state MQTT message");
 		}
 		lastMqttReportMillis = now;
 		lastMqttReportPayload = payload;
@@ -119,7 +120,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		}
 		if (debugLevel == PARSED)
 		{
-			Serial.printf("Heater packet: a=%d o=%d u=%d t=%d\n", packet.activeId, packet.on, packet.inUse, packet.temperatureCelsius);
+			logStream().printf("Heater packet: a=%d o=%d u=%d t=%d\n", packet.activeId, packet.on, packet.inUse, packet.temperatureCelsius);
 		}
 		memcpy(&lastHeaterPacketParsed, &packet, sizeof(RinnaiHeaterPacket));
 		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
@@ -143,7 +144,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		}
 		if (debugLevel == PARSED)
 		{
-			Serial.printf("Control packet: r=%d i=%d o=%d p=%d td=%d tu=%d\n", remote, packet.myId, packet.onOffPressed, packet.priorityPressed, packet.temperatureDownPressed, packet.temperatureUpPressed);
+			logStream().printf("Control packet: r=%d i=%d o=%d p=%d td=%d tu=%d\n", remote, packet.myId, packet.onOffPressed, packet.priorityPressed, packet.temperatureDownPressed, packet.temperatureUpPressed);
 		}
 		if (remote)
 		{
@@ -180,10 +181,10 @@ bool RinnaiMQTTGateway::override(OverrideCommand command)
 	unsigned long originalControlPacketAge = millis() - lastLocalControlPacketMillis;
 	if (originalControlPacketAge > MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS) // if we have no recent original packet. can happen because we send too many overrides or because no panel signal is available
 	{
-		Serial.printf("No fresh original data for override command %d, age %lu\n", command, originalControlPacketAge);
+		logStream().printf("No fresh original data for override command %d, age %lu\n", command, originalControlPacketAge);
 		return false;
 	}
-	// Serial.printf("Attempting override command %d, age %d\n", command, originalControlPacketAge);
+	// logStream().printf("Attempting override command %d, age %d\n", command, originalControlPacketAge);
 	// prep buffer
 	byte buf[RinnaiSignalDecoder::BYTES_IN_PACKET];
 	memcpy(buf, lastLocalControlPacketBytes, RinnaiSignalDecoder::BYTES_IN_PACKET);
@@ -202,13 +203,13 @@ bool RinnaiMQTTGateway::override(OverrideCommand command)
 		RinnaiProtocolDecoder::setTemperatureDownPressed(buf);
 		break;
 	default:
-		Serial.println("Unknown command for override");
+		logStream().println("Unknown command for override");
 		return false;
 	}
 	bool overRet = txDecoder.setOverridePacket(buf, RinnaiSignalDecoder::BYTES_IN_PACKET);
 	if (overRet == false)
 	{
-		Serial.println("Error setting override");
+		logStream().println("Error setting override");
 		return false;
 	}
 	return true;
@@ -235,7 +236,7 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 	}
 
 	// log
-	Serial.printf("Incoming: %s %s - %s\n", fullTopic.c_str(), topic.c_str(), payload.c_str());
+	logStream().printf("Incoming: %s %s - %s\n", fullTopic.c_str(), topic.c_str(), payload.c_str());
 
 	// handle command
 	if (topic == "temp")
@@ -244,7 +245,7 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 		int temp = atoi(payload.c_str());
 		temp = min(temp, (int)RinnaiProtocolDecoder::TEMP_C_MAX);
 		temp = max(temp, (int)RinnaiProtocolDecoder::TEMP_C_MIN);
-		Serial.printf("Setting %d as target temperature\n", temp);
+		logStream().printf("Setting %d as target temperature\n", temp);
 		targetTemperatureCelsius = temp;
 	}
 	else if (topic == "mode")
@@ -258,7 +259,7 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 	{
 		override(PRIORITY);
 	}
-	else if (topic == "debug")
+	else if (topic == "logLevel")
 	{
 		if (payload == "NONE")
 		{
@@ -273,9 +274,22 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 			debugLevel = RAW;
 		}
 	}
+	else if (topic == "logDestination")
+	{
+		if (payload == "TELNET")
+		{
+			logStream().println("Telnet log set");
+			logStream.SetLogStreamTelnet();
+		}
+		else
+		{
+			logStream().println("Serial log set");
+			logStream.SetLogStreamSerial();
+		}
+	}
 	else
 	{
-		Serial.printf("Unknown topic: %s\n", topic.c_str());
+		logStream().printf("Unknown topic: %s\n", topic.c_str());
 	}
 }
 
@@ -285,7 +299,7 @@ void RinnaiMQTTGateway::onMqttConnected()
 	bool ret = mqttClient.subscribe(mqttTopic + "/#");
 	if (!ret)
 	{
-		Serial.println("Error doing a MQTT subscribe");
+		logStream().println("Error doing a MQTT subscribe");
 	}
 
 	// send a '/config' topic to achieve MQTT discovery - https://www.home-assistant.io/docs/mqtt/discovery/
@@ -311,10 +325,10 @@ void RinnaiMQTTGateway::onMqttConnected()
 	doc["temperature_state_template"] = "{{ value_json.targetTemperature }}";
 	String payload;
 	serializeJson(doc, payload);
-	Serial.printf("Sending on MQTT channel '%s/config': %d bytes, %s\n", mqttTopic.c_str(), payload.length(), payload.c_str());
+	logStream().printf("Sending on MQTT channel '%s/config': %d bytes, %s\n", mqttTopic.c_str(), payload.length(), payload.c_str());
 	ret = mqttClient.publish(mqttTopic + "/config", payload);
 	if (!ret)
 	{
-		Serial.println("Error publishing a config MQTT message");
+		logStream().println("Error publishing a config MQTT message");
 	}
 }

@@ -3,7 +3,9 @@
 #include <ArduinoOTA.h> // built-in
 #include <IotWebConf.h> // https://github.com/prampec/IotWebConf
 #include <MQTT.h>		// https://github.com/256dpi/arduino-mqtt
+#include <RemoteDebug.h>// https://github.com/JoaoLopesF/RemoteDebug
 
+#include "LogStream.hpp"
 #include "RinnaiSignalDecoder.hpp"
 #include "RinnaiMQTTGateway.hpp"
 
@@ -14,7 +16,7 @@
 
 // hardcoded settings (TODO, move to separate config or to the ini)
 // Initial name of the Thing. Used e.g. as SSID of the own Access Point.
-const char THING_NAME[] = "rinnai-wifi";
+const char HOST_NAME[] = "rinnai-wifi";
 // Initial password to connect to the Thing, when it creates an own Access Point.
 const char WIFI_INITIAL_AP_PASSWORD[] = "rinnairinnai"; // must be over 8 characters
 // OTA password
@@ -46,12 +48,13 @@ const int MQTT_PACKET_MAX_SIZE = 700; // the config message is rather large, kee
 // main objects
 DNSServer dnsServer;
 WebServer server(80);
-IotWebConf iotWebConf(THING_NAME, &dnsServer, &server, WIFI_INITIAL_AP_PASSWORD, CONFIG_VERSION);
+IotWebConf iotWebConf(HOST_NAME, &dnsServer, &server, WIFI_INITIAL_AP_PASSWORD, CONFIG_VERSION);
 WiFiClient net;
 MQTTClient mqttClient(MQTT_PACKET_MAX_SIZE);
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
 RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN);
 RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, MQTT_TOPIC, TEST_PIN);
+RemoteDebug remoteDebug;
 
 // state
 boolean needReset = false;
@@ -71,6 +74,7 @@ IotWebConfParameter mqttUserPasswordParam = IotWebConfParameter("MQTT password",
 void handleRoot();
 void setupWifiManager();
 void setupOTA();
+void setupRemoteDebug();
 void setupMqtt();
 void wifiConnected();
 void configSaved();
@@ -83,29 +87,29 @@ void onMqttMessageReceived(String &topic, String &payload);
 void setup()
 {
 	Serial.begin(SERIAL_BAUD);
-	Serial.println();
-	Serial.println("Starting up...");
+	logStream().println();
+	logStream().println("Starting up...");
 
 	bool retRx = rxDecoder.setup();
-	Serial.printf("Finished setting up rx decoder, %d\n", retRx);
+	logStream().printf("Finished setting up rx decoder, %d\n", retRx);
 	bool retTx = txDecoder.setup();
-	Serial.printf("Finished setting up tx decoder, %d\n", retTx);
+	logStream().printf("Finished setting up tx decoder, %d\n", retTx);
 	if (!retRx || !retTx)
 	{
 		for (;;)
 			; // hang further execution
 	}
 
-	Serial.println("Setting up Wifi and Mqtt");
+	logStream().println("Setting up Wifi and Mqtt");
 	setupWifiManager();
 	setupMqtt();
 
-	Serial.println("Ready.");
+	logStream().println("Ready.");
 }
 
 void setupWifiManager()
 {
-	//Serial.printf("Config pin: %d\n", digitalRead(CONFIG_PIN));
+	//logStream().printf("Config pin: %d\n", digitalRead(CONFIG_PIN));
 	// setup CONFIG pin ourselves otherwise pullup wasn't ready by the time iotWebConf tried to use it
 	pinMode(CONFIG_PIN, INPUT_PULLUP);
 	delay(1);
@@ -142,7 +146,7 @@ void setupOTA()
 	// ArduinoOTA.setPort(3232);
 
 	// Hostname defaults to esp3232-[MAC]
-	ArduinoOTA.setHostname(THING_NAME);
+	ArduinoOTA.setHostname(HOST_NAME);
 
 	// No authentication by default
 	ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -162,29 +166,39 @@ void setupOTA()
 				type = "filesystem";
 
 			// NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-			Serial.println("Start updating " + type);
+			logStream().println("Start updating " + type);
 		})
 		.onEnd([]() {
-			Serial.println("\nEnd");
+			logStream().println("\nEnd");
 		})
 		.onProgress([](unsigned int progress, unsigned int total) {
-			Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+			logStream().printf("Progress: %u%%\r", (progress / (total / 100)));
 		})
 		.onError([](ota_error_t error) {
-			Serial.printf("Error[%u]: ", error);
+			logStream().printf("Error[%u]: ", error);
 			if (error == OTA_AUTH_ERROR)
-				Serial.println("Auth Failed");
+				logStream().println("Auth Failed");
 			else if (error == OTA_BEGIN_ERROR)
-				Serial.println("Begin Failed");
+				logStream().println("Begin Failed");
 			else if (error == OTA_CONNECT_ERROR)
-				Serial.println("Connect Failed");
+				logStream().println("Connect Failed");
 			else if (error == OTA_RECEIVE_ERROR)
-				Serial.println("Receive Failed");
+				logStream().println("Receive Failed");
 			else if (error == OTA_END_ERROR)
-				Serial.println("End Failed");
+				logStream().println("End Failed");
 		});
 
 	ArduinoOTA.begin();
+}
+
+// need to call once wifi is connected
+void setupRemoteDebug()
+{
+	// Initialize RemoteDebug
+	remoteDebug.begin(HOST_NAME); // Initialize the WiFi server. Can pass port but telnet port 23 is the default
+	// remoteDebug.setResetCmdEnabled(true); // Enable the reset command
+	// remoteDebug.showProfiler(true); // Profiler (Good to measure times, to optimize codes)
+	remoteDebug.showColors(true); // Colors need ANSI supporting terminal
 }
 
 void setupMqtt()
@@ -199,12 +213,15 @@ void loop()
 	iotWebConf.doLoop();
 	// OTA loop, consider to call only if a certain button pin is enabled
 	ArduinoOTA.handle(); // ok to call if not initialized yet, does nothing
+	// RemoteDebug handle
+    remoteDebug.handle();
 	// MQTT loop
 	mqttClient.loop();
 
 	// need to setup OTA after wifi connection
 	if (needOTAConnect)
 	{
+		setupRemoteDebug();
 		setupOTA();
 		needOTAConnect = false;
 	}
@@ -219,20 +236,22 @@ void loop()
 	}
 	else if ((iotWebConf.getState() == IOTWEBCONF_STATE_ONLINE) && (!mqttClient.connected())) // keep mqtt connection
 	{
-		Serial.println("MQTT reconnect");
+		logStream().println("MQTT reconnect");
 		connectMqtt();
 	}
 
 	// need to reset after config change
 	if (needReset)
 	{
-		Serial.println("Rebooting after 1 second.");
+		logStream().println("Rebooting after 1 second.");
 		iotWebConf.delay(1000);
 		ESP.restart();
 	}
 
 	// mqtt and rinnai business logic
 	rinnaiMqttGateway.loop();
+	// see if others want to do some work
+	yield();
 }
 
 /**
@@ -263,13 +282,13 @@ void wifiConnected()
 
 void configSaved()
 {
-	Serial.println("Configuration was updated.");
+	logStream().println("Configuration was updated.");
 	needReset = true;
 }
 
 boolean formValidator()
 {
-	Serial.println("Validating form.");
+	logStream().println("Validating form.");
 	boolean valid = true;
 
 	int l = server.arg(mqttServerParam.getId()).length();
@@ -290,13 +309,13 @@ boolean connectMqtt()
 		// Do not repeat within 1 sec.
 		return false;
 	}
-	Serial.println("Connecting to MQTT server...");
+	logStream().println("Connecting to MQTT server...");
 	if (!connectMqttOptions())
 	{
 		lastMqttConnectionAttempt = now;
 		return false;
 	}
-	Serial.println("Connected!");
+	logStream().println("Connected!");
 
 	rinnaiMqttGateway.onMqttConnected();
 	return true;
@@ -307,10 +326,10 @@ boolean connectMqttOptions()
 	boolean result;
 
 	/*
-	Serial.println("mqtt params:");
-	Serial.println(iotWebConf.getThingName());
-	Serial.println(mqttUserNameValue);
-	Serial.println(mqttUserPasswordValue);
+	logStream().println("mqtt params:");
+	logStream().println(iotWebConf.getThingName());
+	logStream().println(mqttUserNameValue);
+	logStream().println(mqttUserPasswordValue);
 	*/
 
 	if (mqttUserPasswordValue[0] != '\0')
