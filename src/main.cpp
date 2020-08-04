@@ -1,9 +1,9 @@
 #include <Arduino.h>
 
-#include <ArduinoOTA.h> // built-in
-#include <IotWebConf.h> // https://github.com/prampec/IotWebConf
-#include <MQTT.h>		// https://github.com/256dpi/arduino-mqtt
-#include <RemoteDebug.h>// https://github.com/JoaoLopesF/RemoteDebug
+#include <ArduinoOTA.h>	 // built-in
+#include <IotWebConf.h>	 // https://github.com/prampec/IotWebConf
+#include <MQTT.h>		 // https://github.com/256dpi/arduino-mqtt
+#include <RemoteDebug.h> // https://github.com/JoaoLopesF/RemoteDebug
 
 #include "LogStream.hpp"
 #include "RinnaiSignalDecoder.hpp"
@@ -23,6 +23,8 @@ const char WIFI_INITIAL_AP_PASSWORD[] = "rinnairinnai"; // must be over 8 charac
 const char OTA_PASSWORD[] = "rinnairinnai";
 // Thing will stay in AP mode for an amount of time on boot, before retrying to connect to a WiFi network.
 const int AP_MODE_TIMEOUT_MS = 5000;
+// Restrict OTA updates based on state of a pin
+const int OTA_ENABLE_PIN = 0; // if set to !=-1, drive this pin low to allow OTA updates
 
 // MQTT topic prefix
 const char MQTT_TOPIC[] = "homeassistant/climate/rinnai";
@@ -142,6 +144,12 @@ void setupWifiManager()
 // need to call once wifi is connected
 void setupOTA()
 {
+	// allow pin
+	if (OTA_ENABLE_PIN != -1)
+	{
+		pinMode(OTA_ENABLE_PIN, INPUT_PULLUP);
+	}
+
 	// Port defaults to 3232
 	// ArduinoOTA.setPort(3232);
 
@@ -211,10 +219,13 @@ void loop()
 {
 	// -- doLoop should be called as frequently as possible.
 	iotWebConf.doLoop();
-	// OTA loop, consider to call only if a certain button pin is enabled
-	ArduinoOTA.handle(); // ok to call if not initialized yet, does nothing
+	// OTA loop, allow only if a certain button pin is enabled
+	if (OTA_ENABLE_PIN == -1 || digitalRead(OTA_ENABLE_PIN) == LOW)
+	{
+		ArduinoOTA.handle(); // ok to call if not initialized yet, does nothing
+	}
 	// RemoteDebug handle
-    remoteDebug.handle();
+	remoteDebug.handle();
 	// MQTT loop
 	mqttClient.loop();
 
