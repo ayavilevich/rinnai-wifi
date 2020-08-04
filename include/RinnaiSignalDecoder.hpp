@@ -8,7 +8,7 @@ const byte INVALID_PIN = -1;
 class RinnaiSignalDecoder
 {
 public:
-	RinnaiSignalDecoder(const byte pin, const byte proxyOutPin = INVALID_PIN);
+	RinnaiSignalDecoder(const byte pin, const byte proxyOutPin = INVALID_PIN, const bool invertIn = false);
 	bool setup();
 
 	// expose properties
@@ -56,6 +56,7 @@ private:
 	// properties
 	byte pin = INVALID_PIN;
 	byte proxyOutPin = INVALID_PIN;
+	bool invertIn = false;
 	QueueHandle_t pulseQueue = NULL;
 	QueueHandle_t bitQueue = NULL;
 	QueueHandle_t packetQueue = NULL;

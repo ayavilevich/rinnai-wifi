@@ -50,8 +50,14 @@
 #ifndef RX_RINNAI_PIN // pin carrying data from the outside (heater, other control panels, etc)
 #error Need to define RX_RINNAI_PIN
 #endif
+#ifndef RX_INVERT // "true" if we need to invert the incoming signal, set when an inverting mosfet is used to level shift the signal from 5v to 3.3V
+#define RX_INVERT false
+#endif
 #ifndef TX_IN_RINNAI_PIN // pin carrying data from the local control panel mcu
 #error Need to define TX_IN_RINNAI_PIN
+#endif
+#ifndef TX_IN_INVERT // "true" if we need to invert the incoming signal, set when an inverting mosfet is used to level shift the signal from 5v to 3.3V
+#define TX_IN_INVERT false
 #endif
 #ifndef TX_OUT_RINNAI_PIN // the exit fo the proxy, data from the local mcu with optional changes
 #define TX_OUT_RINNAI_PIN -1 // default is a read only mode without overriding commands
@@ -75,8 +81,8 @@ WebServer server(80);
 IotWebConf iotWebConf(HOST_NAME, &dnsServer, &server, WIFI_INITIAL_AP_PASSWORD, WIFI_CONFIG_VERSION);
 WiFiClient net;
 MQTTClient mqttClient(MQTT_PACKET_MAX_SIZE);
-RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
-RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN);
+RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN, INVALID_PIN, RX_INVERT);
+RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN, TX_IN_INVERT);
 RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, MQTT_TOPIC, TEST_PIN);
 RemoteDebug remoteDebug;
 

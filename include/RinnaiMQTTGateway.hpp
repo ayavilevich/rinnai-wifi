@@ -44,7 +44,7 @@ private:
 	String mqttTopic;
 	String mqttTopicState;
 	byte testPin;
-	DebugLevel debugLevel = NONE;
+	DebugLevel logLevel = NONE;
 	int targetTemperatureCelsius = -1;
 
 	unsigned long lastMqttReportMillis = 0;

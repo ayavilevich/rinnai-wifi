@@ -30,8 +30,8 @@ enum BitTaskState
 	WAIT_SYMBOL,
 };
 
-RinnaiSignalDecoder::RinnaiSignalDecoder(const byte pin, const byte proxyOutPin)
-	: pin(pin), proxyOutPin(proxyOutPin)
+RinnaiSignalDecoder::RinnaiSignalDecoder(const byte pin, const byte proxyOutPin, const bool invertIn)
+	: pin(pin), proxyOutPin(proxyOutPin), invertIn(invertIn)
 {
 }
 
@@ -185,6 +185,10 @@ void IRAM_ATTR RinnaiSignalDecoder::pulseISRHandler()
 	item.cycle = xthal_get_ccount();
 	//item.newLevel = gpio_get_level((gpio_num_t)pin); // not IRAM safe
 	item.newLevel = gpio_get_level_IRAM(pin);
+	if (invertIn)
+	{
+		item.newLevel = !item.newLevel;
+	}
 	// track changes to output
 	if (proxyOutPin != INVALID_PIN && !isOverriding) // if overriding proxy is enabled and we are not already overriding
 	{
@@ -330,9 +334,10 @@ void RinnaiSignalDecoder::packetTaskHandler()
 				}
 				packet.bitsPresent++;
 				break;
-			case PRE:
 			case ERROR:
 			default:
+				packetTaskErrorCounter++;
+			case PRE:
 				// flush current (invalid packet) ?
 				// reset state
 				packet.bitsPresent = 0;

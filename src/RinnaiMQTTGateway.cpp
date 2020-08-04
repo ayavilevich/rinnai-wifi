@@ -17,9 +17,21 @@ RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSigna
 void RinnaiMQTTGateway::loop()
 {
 	// low level rinnai decoding monitoring
-	// logStream().printf("rx errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
+	if (logLevel == RAW)
+	{
+		logStream().printf("rx errors: pulse %d, bit %d, packet %d\n", rxDecoder.getPulseHandlerErrorCounter(), rxDecoder.getBitTaskErrorCounter(), rxDecoder.getPacketTaskErrorCounter());
+		logStream().printf("rx pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
+		logStream().printf("rx bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
+		logStream().printf("rx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
+
+		logStream().printf("tx errors: pulse %d, bit %d, packet %d\n", txDecoder.getPulseHandlerErrorCounter(), txDecoder.getBitTaskErrorCounter(), txDecoder.getPacketTaskErrorCounter());
+		logStream().printf("tx pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getPulseQueue()), uxQueueSpacesAvailable(txDecoder.getPulseQueue()));
+		logStream().printf("tx bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getBitQueue()), uxQueueSpacesAvailable(txDecoder.getBitQueue()));
+		logStream().printf("tx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getPacketQueue()), uxQueueSpacesAvailable(txDecoder.getPacketQueue()));
+	}
+	// dump intermediate item queues for low level debug
+	// might require to stop their organic consuming task in the signal decoder first
 	/*
-	logStream().printf("rx pulse: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), uxQueueSpacesAvailable(rxDecoder.getPulseQueue()));
 	static unsigned long lastPulseTime = 0;
 	while (uxQueueMessagesWaiting(rxDecoder.getPulseQueue()))
 	{
@@ -30,7 +42,6 @@ void RinnaiMQTTGateway::loop()
 		lastPulseTime = item.cycle;
 		logStream().printf("rx p %d %d, q %d, r %d\n", item.newLevel, d, uxQueueMessagesWaiting(rxDecoder.getPulseQueue()), ret);
 	}
-	logStream().printf("rx bit: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getBitQueue()), uxQueueSpacesAvailable(rxDecoder.getBitQueue()));
 	while (uxQueueMessagesWaiting(rxDecoder.getBitQueue()))
 	{
 		BitQueueItem item;
@@ -38,26 +49,23 @@ void RinnaiMQTTGateway::loop()
 		logStream().printf("rx b %d %d %d, q %d, r %d\n", item.bit, item.startCycle, item.misc, uxQueueMessagesWaiting(rxDecoder.getBitQueue()), ret);
 	}
 	*/
-	// logStream().printf("rx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), uxQueueSpacesAvailable(rxDecoder.getPacketQueue()));
 	while (uxQueueMessagesWaiting(rxDecoder.getPacketQueue()))
 	{
 		PacketQueueItem item;
 		BaseType_t ret = xQueueReceive(rxDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
 		if (handleIncomingPacketQueueItem(item, true) == false)
 		{
-			logStream().printf("rx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
+			logStream().printf("Error in rx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
 		}
 	}
 
-	// logStream().printf("tx errors: pulse %d, bit %d, packet %d\n", txDecoder.getPulseHandlerErrorCounter(), txDecoder.getBitTaskErrorCounter(), txDecoder.getPacketTaskErrorCounter());
-	// logStream().printf("tx packet: waiting %d, avail %d\n", uxQueueMessagesWaiting(txDecoder.getPacketQueue()), uxQueueSpacesAvailable(txDecoder.getPacketQueue()));
 	while (uxQueueMessagesWaiting(txDecoder.getPacketQueue()))
 	{
 		PacketQueueItem item;
 		BaseType_t ret = xQueueReceive(txDecoder.getPacketQueue(), &item, 0); // pdTRUE if an item was successfully received from the queue, otherwise pdFALSE.
 		if (handleIncomingPacketQueueItem(item, false) == false)
 		{
-			logStream().printf("tx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
+			logStream().printf("Error in tx pkt %d %02x%02x%02x %u %d %d %d, q %d, r %d\n", item.bitsPresent, item.data[0], item.data[1], item.data[2], item.startCycle, item.validPre, item.validParity, item.validChecksum, uxQueueMessagesWaiting(rxDecoder.getPacketQueue()), ret);
 		}
 	}
 
@@ -118,7 +126,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		{
 			return false;
 		}
-		if (debugLevel == PARSED)
+		if (logLevel == PARSED)
 		{
 			logStream().printf("Heater packet: a=%d o=%d u=%d t=%d\n", packet.activeId, packet.on, packet.inUse, packet.temperatureCelsius);
 		}
@@ -142,7 +150,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		{
 			return false;
 		}
-		if (debugLevel == PARSED)
+		if (logLevel == PARSED)
 		{
 			logStream().printf("Control packet: r=%d i=%d o=%d p=%d td=%d tu=%d\n", remote, packet.myId, packet.onOffPressed, packet.priorityPressed, packet.temperatureDownPressed, packet.temperatureUpPressed);
 		}
@@ -263,15 +271,15 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 	{
 		if (payload == "NONE")
 		{
-			debugLevel = NONE;
+			logLevel = NONE;
 		}
 		else if (payload == "PARSED")
 		{
-			debugLevel = PARSED;
+			logLevel = PARSED;
 		}
 		else if (payload == "RAW")
 		{
-			debugLevel = RAW;
+			logLevel = RAW;
 		}
 	}
 	else if (topic == "logDestination")
