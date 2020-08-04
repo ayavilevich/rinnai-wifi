@@ -180,7 +180,7 @@ bool RinnaiMQTTGateway::override(OverrideCommand command)
 	unsigned long originalControlPacketAge = millis() - lastLocalControlPacketMillis;
 	if (originalControlPacketAge > MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS) // if we have no recent original packet. can happen because we send too many overrides or because no panel signal is available
 	{
-		Serial.printf("No fresh original data for override command %d, age %d\n", command, originalControlPacketAge);
+		Serial.printf("No fresh original data for override command %d, age %lu\n", command, originalControlPacketAge);
 		return false;
 	}
 	// Serial.printf("Attempting override command %d, age %d\n", command, originalControlPacketAge);
