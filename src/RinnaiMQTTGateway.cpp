@@ -70,7 +70,7 @@ void RinnaiMQTTGateway::loop()
 		doc["currentTemperature"] = lastHeaterPacketParsed.temperatureCelsius;
 		doc["targetTemperature"] = targetTemperatureCelsius;
 		doc["activeId"] = lastHeaterPacketParsed.activeId;
-		doc["mode"] = lastHeaterPacketParsed.on ? "heating" : "off";
+		doc["mode"] = lastHeaterPacketParsed.on ? "heat" : "off";
 		doc["action"] = lastHeaterPacketParsed.inUse ? "heating" : (lastHeaterPacketParsed.on ? "idle" : "off");
 		doc["heaterBytes"] = RinnaiProtocolDecoder::renderPacket(lastHeaterPacketBytes);
 	}
