@@ -6,7 +6,6 @@
 
 #include "RinnaiSignalDecoder.hpp"
 #include "RinnaiMQTTGateway.hpp"
-#include "StreamPrintf.hpp"
 
 // confirm required parameters passed from the ini
 #ifndef SERIAL_BAUD
@@ -88,9 +87,9 @@ void setup()
 	Serial.println("Starting up...");
 
 	bool retRx = rxDecoder.setup();
-	StreamPrintf(Serial, "Finished setting up rx decoder, %d\n", retRx);
+	Serial.printf("Finished setting up rx decoder, %d\n", retRx);
 	bool retTx = txDecoder.setup();
-	StreamPrintf(Serial, "Finished setting up tx decoder, %d\n", retTx);
+	Serial.printf("Finished setting up tx decoder, %d\n", retTx);
 	if (!retRx || !retTx)
 	{
 		for (;;)
@@ -106,7 +105,7 @@ void setup()
 
 void setupWifiManager()
 {
-	//StreamPrintf(Serial, "Config pin: %d\n", digitalRead(CONFIG_PIN));
+	//Serial.printf("Config pin: %d\n", digitalRead(CONFIG_PIN));
 	// setup CONFIG pin ourselves otherwise pullup wasn't ready by the time iotWebConf tried to use it
 	pinMode(CONFIG_PIN, INPUT_PULLUP);
 	delay(1);

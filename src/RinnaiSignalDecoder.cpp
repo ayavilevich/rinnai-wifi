@@ -1,5 +1,4 @@
 #include "RinnaiSignalDecoder.hpp"
-#include "StreamPrintf.hpp"
 
 const int PULSES_IN_BIT = 2;
 const int BITS_IN_PACKET = RinnaiSignalDecoder::BYTES_IN_PACKET * 8;
@@ -57,38 +56,38 @@ bool RinnaiSignalDecoder::setup()
 	ret_isr = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);	   // ESP_INTR_FLAG_IRAM -> code is in RAM -> allows the interrupt to run even during flash operations
 	if (ret_isr != ESP_OK && ret_isr != ESP_ERR_INVALID_STATE) // ESP_ERR_INVALID_STATE -> already initialized
 	{
-		StreamPrintf(Serial, "Error installing isr, %d\n", ret_isr);
+		Serial.printf("Error installing isr, %d\n", ret_isr);
 		return false;
 	}
 	ret_isr = gpio_isr_handler_add((gpio_num_t)pin, &RinnaiSignalDecoder::pulseISRHandler, this);
 	if (ret_isr != ESP_OK)
 	{
-		StreamPrintf(Serial, "Error adding isr handler, %d\n", ret_isr);
+		Serial.printf("Error adding isr handler, %d\n", ret_isr);
 		return false;
 	}
 	// create pulse queue
 	pulseQueue = xQueueCreate(MAX_PACKETS_IN_QUEUE * BITS_IN_PACKET * PULSES_IN_BIT, sizeof(PulseQueueItem)); // every bit is two pulses (not including "pre" overhead)
 	if (pulseQueue == 0)
 	{
-		StreamPrintf(Serial, "Error creating queue\n");
+		Serial.printf("Error creating queue\n");
 		return false;
 	}
 	// create bit queue
 	bitQueue = xQueueCreate(MAX_PACKETS_IN_QUEUE * BITS_IN_PACKET, sizeof(BitQueueItem));
 	if (bitQueue == 0)
 	{
-		StreamPrintf(Serial, "Error creating queue\n");
+		Serial.printf("Error creating queue\n");
 		return false;
 	}
 	// create packet queue
 	packetQueue = xQueueCreate(MAX_PACKETS_IN_QUEUE, sizeof(PacketQueueItem));
 	if (packetQueue == 0)
 	{
-		StreamPrintf(Serial, "Error creating queue\n");
+		Serial.printf("Error creating queue\n");
 		return false;
 	}
 	// log
-	StreamPrintf(Serial, "Created queues, now about to create tasks\n");
+	Serial.printf("Created queues, now about to create tasks\n");
 	// create pulse to bit task
 	BaseType_t ret;
 	ret = xTaskCreate([](void *o) { static_cast<RinnaiSignalDecoder *>(o)->bitTaskHandler(); },
@@ -99,7 +98,7 @@ bool RinnaiSignalDecoder::setup()
 					  &bitTask);
 	if (ret != pdPASS)
 	{
-		StreamPrintf(Serial, "Error creating task, %d\n", ret);
+		Serial.printf("Error creating task, %d\n", ret);
 		return false;
 	}
 	// create byte to packet task
@@ -111,7 +110,7 @@ bool RinnaiSignalDecoder::setup()
 					  &packetTask);
 	if (ret != pdPASS)
 	{
-		StreamPrintf(Serial, "Error creating task, %d\n", ret);
+		Serial.printf("Error creating task, %d\n", ret);
 		return false;
 	}
 	// create packet override task
@@ -123,7 +122,7 @@ bool RinnaiSignalDecoder::setup()
 					  &overrideTask);
 	if (ret != pdPASS)
 	{
-		StreamPrintf(Serial, "Error creating task, %d\n", ret);
+		Serial.printf("Error creating task, %d\n", ret);
 		return false;
 	}
 	// return
