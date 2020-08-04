@@ -9,48 +9,70 @@
 #include "RinnaiSignalDecoder.hpp"
 #include "RinnaiMQTTGateway.hpp"
 
-// confirm required parameters passed from the ini
+// check (required) parameters passed from the ini
+// create your own private_config.ini with the data. See private_config_template.ini
 #ifndef SERIAL_BAUD
 #error Need to pass SERIAL_BAUD
 #endif
-
-// hardcoded settings (TODO, move to separate config or to the ini)
 // Initial name of the Thing. Used e.g. as SSID of the own Access Point.
-const char HOST_NAME[] = "rinnai-wifi";
+#ifndef HOST_NAME
+#define HOST_NAME "rinnai-wifi"
+#endif
 // Initial password to connect to the Thing, when it creates an own Access Point.
-const char WIFI_INITIAL_AP_PASSWORD[] = "rinnairinnai"; // must be over 8 characters
+#ifndef WIFI_INITIAL_AP_PASSWORD
+#define WIFI_INITIAL_AP_PASSWORD "rinnairinnai" // must be over 8 characters
+#endif
 // OTA password
-const char OTA_PASSWORD[] = "rinnairinnai";
+#ifndef OTA_PASSWORD
+#error Need to define ota_password / OTA_PASSWORD
+#endif
 // Thing will stay in AP mode for an amount of time on boot, before retrying to connect to a WiFi network.
-const int AP_MODE_TIMEOUT_MS = 5000;
+#ifndef AP_MODE_TIMEOUT_MS
+#define AP_MODE_TIMEOUT_MS 5000
+#endif
 // Restrict OTA updates based on state of a pin
-const int OTA_ENABLE_PIN = 0; // if set to !=-1, drive this pin low to allow OTA updates
-
+#ifndef OTA_ENABLE_PIN
+#define OTA_ENABLE_PIN -1 // if set to !=-1, drive this pin low to allow OTA updates
+#endif
 // MQTT topic prefix
-const char MQTT_TOPIC[] = "homeassistant/climate/rinnai";
-const int MQTT_PACKET_MAX_SIZE = 700; // the config message is rather large, keep enough space
-
-// max configuration paramter length
-#define CONFIG_PARAM_MAX_LEN 128
-// -- Configuration specific key. The value should be modified if config structure was changed.
-#define CONFIG_VERSION "mqt1"
-// -- When CONFIG_PIN is pulled to ground on startup, the Thing will use the initial
-//      password to build an AP. (E.g. in case of lost password)
-#define CONFIG_PIN 4
+#ifndef MQTT_TOPIC
+#define MQTT_TOPIC "homeassistant/climate/rinnai"
+#endif
+// When WIFI_CONFIG_PIN is pulled to ground on startup, the Thing will use the initial password to build an AP. (E.g. in case of lost password)
+#ifndef WIFI_CONFIG_PIN
+#error Need to define WIFI_CONFIG_PIN
+#endif
 // Pin whose state to send over mqtt
-#define TEST_PIN 0
-// -- Status indicator pin.
+#ifndef TEST_PIN
+#error Need to define TEST_PIN
+#endif
+// Rinnai rx and tx pins
+#ifndef RX_RINNAI_PIN // pin carrying data from the outside (heater, other control panels, etc)
+#error Need to define RX_RINNAI_PIN
+#endif
+#ifndef TX_IN_RINNAI_PIN // pin carrying data from the local control panel mcu
+#error Need to define TX_IN_RINNAI_PIN
+#endif
+#ifndef TX_OUT_RINNAI_PIN // the exit fo the proxy, data from the local mcu with optional changes
+#define TX_OUT_RINNAI_PIN -1 // default is a read only mode without overriding commands
+#endif
+
+// hardcoded settings (consider to move to separate config or to the ini)
+// mqtt
+const int MQTT_PACKET_MAX_SIZE = 700; // the config message is rather large, keep enough space
+// wifi manager - // max configuration paramter length
+const int WIFI_CONFIG_PARAM_MAX_LEN = 128;
+// wifi manager - Configuration specific key. The value should be modified if config structure was changed.
+const char WIFI_CONFIG_VERSION[] = "mqt1";
+// wifi manager - Status indicator pin.
 //      First it will light up (kept LOW), on Wifi connection it will blink,
 //      when connected to the Wifi it will turn off (kept HIGH).
-#define STATUS_PIN LED_BUILTIN
-#define RX_RINNAI_PIN 25
-#define TX_IN_RINNAI_PIN 26
-#define TX_OUT_RINNAI_PIN 12
+const int WIFI_STATUS_PIN = LED_BUILTIN;
 
 // main objects
 DNSServer dnsServer;
 WebServer server(80);
-IotWebConf iotWebConf(HOST_NAME, &dnsServer, &server, WIFI_INITIAL_AP_PASSWORD, CONFIG_VERSION);
+IotWebConf iotWebConf(HOST_NAME, &dnsServer, &server, WIFI_INITIAL_AP_PASSWORD, WIFI_CONFIG_VERSION);
 WiFiClient net;
 MQTTClient mqttClient(MQTT_PACKET_MAX_SIZE);
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN);
@@ -64,13 +86,13 @@ boolean needOTAConnect = false;
 boolean needMqttConnect = false;
 unsigned long lastMqttConnectionAttempt = 0;
 
-char mqttServerValue[CONFIG_PARAM_MAX_LEN];
-char mqttUserNameValue[CONFIG_PARAM_MAX_LEN];
-char mqttUserPasswordValue[CONFIG_PARAM_MAX_LEN];
+char mqttServerValue[WIFI_CONFIG_PARAM_MAX_LEN];
+char mqttUserNameValue[WIFI_CONFIG_PARAM_MAX_LEN];
+char mqttUserPasswordValue[WIFI_CONFIG_PARAM_MAX_LEN];
 
-IotWebConfParameter mqttServerParam = IotWebConfParameter("MQTT server", "mqttServer", mqttServerValue, CONFIG_PARAM_MAX_LEN);
-IotWebConfParameter mqttUserNameParam = IotWebConfParameter("MQTT user", "mqttUser", mqttUserNameValue, CONFIG_PARAM_MAX_LEN);
-IotWebConfParameter mqttUserPasswordParam = IotWebConfParameter("MQTT password", "mqttPass", mqttUserPasswordValue, CONFIG_PARAM_MAX_LEN, "password");
+IotWebConfParameter mqttServerParam = IotWebConfParameter("MQTT server", "mqttServer", mqttServerValue, WIFI_CONFIG_PARAM_MAX_LEN);
+IotWebConfParameter mqttUserNameParam = IotWebConfParameter("MQTT user", "mqttUser", mqttUserNameValue, WIFI_CONFIG_PARAM_MAX_LEN);
+IotWebConfParameter mqttUserPasswordParam = IotWebConfParameter("MQTT password", "mqttPass", mqttUserPasswordValue, WIFI_CONFIG_PARAM_MAX_LEN, "password");
 
 // declarations
 void handleRoot();
@@ -111,13 +133,13 @@ void setup()
 
 void setupWifiManager()
 {
-	//logStream().printf("Config pin: %d\n", digitalRead(CONFIG_PIN));
+	//logStream().printf("Config pin: %d\n", digitalRead(WIFI_CONFIG_PIN));
 	// setup CONFIG pin ourselves otherwise pullup wasn't ready by the time iotWebConf tried to use it
-	pinMode(CONFIG_PIN, INPUT_PULLUP);
+	pinMode(WIFI_CONFIG_PIN, INPUT_PULLUP);
 	delay(1);
 	// -- Initializing the configuration.
-	iotWebConf.setStatusPin(STATUS_PIN);
-	iotWebConf.setConfigPin(CONFIG_PIN);
+	iotWebConf.setStatusPin(WIFI_STATUS_PIN);
+	iotWebConf.setConfigPin(WIFI_CONFIG_PIN);
 	iotWebConf.addParameter(&mqttServerParam);
 	iotWebConf.addParameter(&mqttUserNameParam);
 	iotWebConf.addParameter(&mqttUserPasswordParam);
