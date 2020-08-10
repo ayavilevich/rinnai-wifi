@@ -12,6 +12,9 @@ const int MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS = 500; // ms, only send override 
 RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSignalDecoder &txDecoder, MQTTClient &mqttClient, String mqttTopic, byte testPin)
 	: rxDecoder(rxDecoder), txDecoder(txDecoder), mqttClient(mqttClient), mqttTopic(mqttTopic), mqttTopicState(String(mqttTopic) + "/state"), testPin(testPin)
 {
+	// set a will topic to signal that we are unavailable
+	String availabilityTopic = mqttTopic + "/availability";
+	mqttClient.setWill(availabilityTopic.c_str(), "offline", true, 0); // set retained will message
 }
 
 void RinnaiMQTTGateway::loop()
@@ -331,6 +334,7 @@ void RinnaiMQTTGateway::onMqttConnected()
 	doc["temperature_unit"] = "C";
 	doc["temperature_state_topic"] = "~/state";
 	doc["temperature_state_template"] = "{{ value_json.targetTemperature }}";
+	doc["availability_topic"] = "~/availability";
 	String payload;
 	serializeJson(doc, payload);
 	logStream().printf("Sending on MQTT channel '%s/config': %d bytes, %s\n", mqttTopic.c_str(), payload.length(), payload.c_str());
@@ -338,5 +342,11 @@ void RinnaiMQTTGateway::onMqttConnected()
 	if (!ret)
 	{
 		logStream().println("Error publishing a config MQTT message");
+	}
+	// send an availability topic to signal that we are available
+	ret = mqttClient.publish(mqttTopic + "/availability", "online");
+	if (!ret)
+	{
+		logStream().println("Error publishing an availability MQTT message");
 	}
 }
