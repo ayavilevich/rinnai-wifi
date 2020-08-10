@@ -38,18 +38,20 @@ RinnaiSignalDecoder::RinnaiSignalDecoder(const byte pin, const byte proxyOutPin,
 // return true is setup is ok
 bool RinnaiSignalDecoder::setup()
 {
-	// setup pin
-	if (proxyOutPin != INVALID_PIN)
-	{
-		pinMode(proxyOutPin, OUTPUT);
-		digitalWrite(proxyOutPin, HIGH); // default state when no incoming signal is present
-	}
+	// setup input pin
 	// pinMode(pin, INPUT); // too basic
 	gpio_pad_select_gpio(pin);
 	gpio_set_direction((gpio_num_t)pin, GPIO_MODE_INPUT); // is this a valid cast to gpio_num_t?
 	gpio_set_pull_mode((gpio_num_t)pin, GPIO_PULLUP_ONLY);
 	gpio_set_intr_type((gpio_num_t)pin, GPIO_INTR_ANYEDGE);
 	gpio_intr_enable((gpio_num_t)pin);
+	// setup output pin
+	if (proxyOutPin != INVALID_PIN)
+	{
+		pinMode(proxyOutPin, OUTPUT);
+		digitalWrite(proxyOutPin, digitalRead(pin)); // outputting LOW will signal that we are ready to receive
+	}
+
 	// create interrupts
 	// attachInterrupt(); // too basic
 	// use either gpio_isr_register (global ISR for all pins) or gpio_install_isr_service + gpio_isr_handler_add (per pin)
