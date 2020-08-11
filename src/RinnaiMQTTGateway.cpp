@@ -241,7 +241,7 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 	}
 
 	// ignore what we send
-	if (topic == "config" || topic == "state")
+	if (topic == "config" || topic == "state" || topic == "availability")
 	{
 		return;
 	}
