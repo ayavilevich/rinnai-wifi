@@ -15,7 +15,7 @@
 #error Need to pass SERIAL_BAUD
 #endif
 // Initial name of the Thing. Used e.g. as SSID of the own Access Point.
-#ifndef HOST_NAME
+#ifndef HOST_NAME // there could be esp-idf bugs setting the DHCP hostname, it will be empty or "espressif", wait for fixes.
 #define HOST_NAME "rinnai-wifi"
 #endif
 // Initial password to connect to the Thing, when it creates an own Access Point.
@@ -59,7 +59,7 @@
 #ifndef TX_IN_INVERT // "true" if we need to invert the incoming signal, set when an inverting mosfet is used to level shift the signal from 5v to 3.3V
 #define TX_IN_INVERT false
 #endif
-#ifndef TX_OUT_RINNAI_PIN // the exit fo the proxy, data from the local mcu with optional changes
+#ifndef TX_OUT_RINNAI_PIN	 // the exit fo the proxy, data from the local mcu with optional changes
 #define TX_OUT_RINNAI_PIN -1 // default is a read only mode without overriding commands
 #endif
 
@@ -106,6 +106,7 @@ void setupWifiManager();
 void setupOTA();
 void setupRemoteDebug();
 void setupMqtt();
+void connectWifi(const char *ssid, const char *password);
 void wifiConnected();
 void configSaved();
 boolean formValidator();
@@ -152,6 +153,7 @@ void setupWifiManager()
 	iotWebConf.setConfigSavedCallback(&configSaved);
 	iotWebConf.setFormValidator(&formValidator);
 	iotWebConf.setWifiConnectionCallback(&wifiConnected);
+	iotWebConf.setWifiConnectionHandler(&connectWifi);
 	iotWebConf.setApTimeoutMs(AP_MODE_TIMEOUT_MS); // try to shorten the time the device is in AP mode on boot
 
 	// -- Initializing the configuration.
@@ -310,6 +312,19 @@ void handleRoot()
 	s += "</body></html>\n";
 
 	server.send(200, "text/html", s);
+}
+
+// callback to connect to wifi
+void connectWifi(const char *ssid, const char *password)
+{
+	// Attempt to fix issue setting the DHCP hostname. Unfortunately this just seems to set the hostname to "espressif" possibly due to:
+	// https://github.com/espressif/esp-idf/issues/4737
+	// If have working solution, report at: https://github.com/prampec/IotWebConf/issues/40
+	/*
+	WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE); // https://github.com/espressif/arduino-esp32/issues/2537
+	WiFi.setHostname(HOST_NAME);
+	*/
+	WiFi.begin(ssid, password);
 }
 
 // callback when wifi is connected
