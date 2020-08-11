@@ -1,3 +1,4 @@
+#include <WiFi.h>
 #include <ArduinoJson.h>
 
 #include "LogStream.hpp"
@@ -75,6 +76,7 @@ void RinnaiMQTTGateway::loop()
 	// MQTT payload generation and flushing
 	// render payload
 	DynamicJsonDocument doc(STATE_JSON_MAX_SIZE);
+	doc["ip"] = WiFi.localIP().toString();
 	doc["testPin"] = digitalRead(testPin) == LOW ? "ON" : "OFF";
 	if (heaterPacketCounter)
 	{
