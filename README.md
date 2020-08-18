@@ -1,7 +1,7 @@
 # Rinnai Wifi
 Firmware for an ESP32 module that interfaces a Rinnai Control Panel to Home Assistant via MQTT
 
-Details TBD
+An article about the project: https://blog.yavilevich.com/2020/08/changing-a-dumb-rinnai-water-heater-to-a-smart-one/
 
 Related projects:  
 https://github.com/ayavilevich/rinnai-mock/  
