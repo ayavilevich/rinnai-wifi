@@ -47,6 +47,7 @@ private:
 	String mqttTopicState;
 	byte testPin;
 	DebugLevel logLevel = NONE;
+	bool enableTemperatureSync = true; // on by default on startup, if needed this default can be made into a build option
 	int targetTemperatureCelsius = -1;
 
 	unsigned long lastMqttReportMillis = 0;

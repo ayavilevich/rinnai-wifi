@@ -78,6 +78,7 @@ void RinnaiMQTTGateway::loop()
 	DynamicJsonDocument doc(STATE_JSON_MAX_SIZE);
 	doc["ip"] = WiFi.localIP().toString();
 	doc["testPin"] = digitalRead(testPin) == LOW ? "ON" : "OFF";
+	doc["enableTemperatureSync"] = enableTemperatureSync;
 	if (heaterPacketCounter)
 	{
 		doc["currentTemperature"] = lastHeaterPacketParsed.temperatureCelsius;
@@ -306,6 +307,17 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 		logStream().printf("Setting %d as target temperature\n", temp);
 		targetTemperatureCelsius = temp;
 	}
+	else if (topic == "temperature_sync")
+	{
+		if (payload == "on" || payload == "enable" || payload == "true" || payload == "1")
+		{
+			enableTemperatureSync = true;
+		}
+		else
+		{
+			enableTemperatureSync = false; // in case something breaks and you want to take control manually at the panel
+		}
+	}
 	else if (topic == "mode")
 	{
 		if ((payload == "off" && lastHeaterPacketParsed.on) || (payload == "heat" && !lastHeaterPacketParsed.on))
@@ -317,24 +329,24 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 	{
 		override(PRIORITY);
 	}
-	else if (topic == "logLevel")
+	else if (topic == "log_level")
 	{
-		if (payload == "NONE")
+		if (payload == "none")
 		{
 			logLevel = NONE;
 		}
-		else if (payload == "PARSED")
+		else if (payload == "parsed")
 		{
 			logLevel = PARSED;
 		}
-		else if (payload == "RAW")
+		else if (payload == "raw")
 		{
 			logLevel = RAW;
 		}
 	}
-	else if (topic == "logDestination")
+	else if (topic == "log_destination")
 	{
-		if (payload == "TELNET")
+		if (payload == "telnet")
 		{
 			logStream().println("Telnet log set");
 			logStream.SetLogStreamTelnet();
