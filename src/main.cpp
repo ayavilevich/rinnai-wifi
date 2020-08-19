@@ -14,6 +14,10 @@
 #ifndef SERIAL_BAUD
 #error Need to pass SERIAL_BAUD
 #endif
+// Name of the device in homa-assistant
+#ifndef HA_DEVICE_NAME
+#define HA_DEVICE_NAME "Rinnai Water Heater"
+#endif
 // Initial name of the Thing. Used e.g. as SSID of the own Access Point.
 #ifndef HOST_NAME // there could be esp-idf bugs setting the DHCP hostname, it will be empty or "espressif", wait for fixes.
 #define HOST_NAME "rinnai-wifi"
@@ -83,7 +87,7 @@ WiFiClient net;
 MQTTClient mqttClient(MQTT_PACKET_MAX_SIZE);
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN, INVALID_PIN, RX_INVERT);
 RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN, TX_IN_INVERT);
-RinnaiMQTTGateway rinnaiMqttGateway(rxDecoder, txDecoder, mqttClient, MQTT_TOPIC, TEST_PIN);
+RinnaiMQTTGateway rinnaiMqttGateway(HA_DEVICE_NAME, rxDecoder, txDecoder, mqttClient, MQTT_TOPIC, TEST_PIN);
 RemoteDebug remoteDebug;
 
 // state
@@ -140,7 +144,6 @@ void setup()
 
 void setupWifiManager()
 {
-	//logStream().printf("Config pin: %d\n", digitalRead(WIFI_CONFIG_PIN));
 	// setup CONFIG pin ourselves otherwise pullup wasn't ready by the time iotWebConf tried to use it
 	pinMode(WIFI_CONFIG_PIN, INPUT_PULLUP);
 	delay(1);

@@ -4,14 +4,14 @@
 #include "LogStream.hpp"
 #include "RinnaiMQTTGateway.hpp"
 
-const char *DEVICE_NAME = "Rinnai Water Heater";
+const bool REPORT_RESEARCH_FIELDS = true; // send some additional data in JSON to help us understand the protocol better
 const int MQTT_REPORT_FORCED_FLUSH_INTERVAL_MS = 20000; // ms
-const int STATE_JSON_MAX_SIZE = 300;
-const int CONFIG_JSON_MAX_SIZE = 500;
+const int STATE_JSON_MAX_SIZE = REPORT_RESEARCH_FIELDS ? 500 : 300;
+const int CONFIG_JSON_MAX_SIZE = 700;
 const int MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS = 500; // ms, only send override if there was an original message lately
 
-RinnaiMQTTGateway::RinnaiMQTTGateway(RinnaiSignalDecoder &rxDecoder, RinnaiSignalDecoder &txDecoder, MQTTClient &mqttClient, String mqttTopic, byte testPin)
-	: rxDecoder(rxDecoder), txDecoder(txDecoder), mqttClient(mqttClient), mqttTopic(mqttTopic), mqttTopicState(String(mqttTopic) + "/state"), testPin(testPin)
+RinnaiMQTTGateway::RinnaiMQTTGateway(String haDeviceName, RinnaiSignalDecoder &rxDecoder, RinnaiSignalDecoder &txDecoder, MQTTClient &mqttClient, String mqttTopic, byte testPin)
+	: haDeviceName(haDeviceName), rxDecoder(rxDecoder), txDecoder(txDecoder), mqttClient(mqttClient), mqttTopic(mqttTopic), mqttTopicState(String(mqttTopic) + "/state"), testPin(testPin)
 {
 	// set a will topic to signal that we are unavailable
 	String availabilityTopic = mqttTopic + "/availability";
@@ -82,15 +82,19 @@ void RinnaiMQTTGateway::loop()
 	{
 		doc["currentTemperature"] = lastHeaterPacketParsed.temperatureCelsius;
 		doc["targetTemperature"] = targetTemperatureCelsius;
-		doc["activeId"] = lastHeaterPacketParsed.activeId;
 		doc["mode"] = lastHeaterPacketParsed.on ? "heat" : "off";
 		doc["action"] = lastHeaterPacketParsed.inUse ? "heating" : (lastHeaterPacketParsed.on ? "idle" : "off");
-		doc["heaterBytes"] = RinnaiProtocolDecoder::renderPacket(lastHeaterPacketBytes);
+		if (REPORT_RESEARCH_FIELDS)
+		{
+			doc["activeId"] = lastHeaterPacketParsed.activeId;
+			doc["heaterBytes"] = RinnaiProtocolDecoder::renderPacket(lastHeaterPacketBytes);
+			doc["startupState"] = lastHeaterPacketParsed.startupState;
+		}
 	}
-	if (localControlPacketCounter)
+	if (localControlPacketCounter && REPORT_RESEARCH_FIELDS)
 	{
-		doc["controlId"] = lastLocalControlPacketParsed.myId;
-		doc["controlBytes"] = RinnaiProtocolDecoder::renderPacket(lastLocalControlPacketBytes);
+		doc["locControlId"] = lastLocalControlPacketParsed.myId;
+		doc["locControlBytes"] = RinnaiProtocolDecoder::renderPacket(lastLocalControlPacketBytes);
 	}
 	String payload;
 	serializeJson(doc, payload);
@@ -98,14 +102,42 @@ void RinnaiMQTTGateway::loop()
 	unsigned long now = millis();
 	if (mqttClient.connected() && (now - lastMqttReportMillis > MQTT_REPORT_FORCED_FLUSH_INTERVAL_MS || payload != lastMqttReportPayload))
 	{
-		logStream().printf("Sending on MQTT channel '%s': %s\n", mqttTopicState.c_str(), payload.c_str());
-		bool ret = mqttClient.publish(mqttTopicState, payload);
+		// now that we have decided to send, expand payload with additional fields that normally don't trigger a send on their own
+		doc["rssi"] = WiFi.RSSI(); // the current RSSI /Received Signal Strength in dBm (?)
+		if (REPORT_RESEARCH_FIELDS)
+		{
+			if (heaterPacketCounter)
+			{
+				doc["heaterDelta"] = lastHeaterPacketDeltaMillis;
+			}
+			if (localControlPacketCounter)
+			{
+				doc["locControlTiming"] = millisDelta(lastLocalControlPacketMillis, lastHeaterPacketMillis);
+			}
+			if (remoteControlPacketCounter)
+			{
+				doc["remControlId"] = lastRemoteControlPacketParsed.myId;
+				doc["remControlBytes"] = RinnaiProtocolDecoder::renderPacket(lastRemoteControlPacketBytes);
+				doc["remControlTiming"] = millisDelta(lastRemoteControlPacketMillis, lastHeaterPacketMillis);
+			}
+			if (unknownPacketCounter)
+			{
+				doc["unknownBytes"] = RinnaiProtocolDecoder::renderPacket(lastUnknownPacketBytes);
+				doc["unknownTiming"] = millisDelta(lastUnknownPacketMillis, lastHeaterPacketMillis);
+			}
+		}
+		// re-serialize payload
+		String payloadExpanded;
+		serializeJson(doc, payloadExpanded);
+		// send
+		logStream().printf("Sending on MQTT channel '%s': %d/%d, %s\n", mqttTopicState.c_str(), payloadExpanded.length(), STATE_JSON_MAX_SIZE, payloadExpanded.c_str());
+		bool ret = mqttClient.publish(mqttTopicState, payloadExpanded);
 		if (!ret)
 		{
 			logStream().println("Error publishing a state MQTT message");
 		}
 		lastMqttReportMillis = now;
-		lastMqttReportPayload = payload;
+		lastMqttReportPayload = payload; // save last (restricted) payload for change detection
 	}
 
 	// delay to not over flood the serial interface
@@ -114,16 +146,18 @@ void RinnaiMQTTGateway::loop()
 
 bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &item, bool remote)
 {
+	// check packet is valid
 	if (!item.validPre || !item.validParity || !item.validChecksum)
 	{
 		return false;
 	}
+	// see where the packet originates from
 	RinnaiPacketSource source = RinnaiProtocolDecoder::getPacketSource(item.data, RinnaiSignalDecoder::BYTES_IN_PACKET);
-	if (source == INVALID || source == UNKNOWN)
+	if (source == INVALID) // bad checksum, size, etc
 	{
 		return false;
 	}
-	if (source == HEATER && remote)
+	else if (source == HEATER && remote)
 	{
 		RinnaiHeaterPacket packet;
 		bool ret = RinnaiProtocolDecoder::decodeHeaterPacket(item.data, packet);
@@ -137,8 +171,14 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		}
 		memcpy(&lastHeaterPacketParsed, &packet, sizeof(RinnaiHeaterPacket));
 		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
+		// counters and timings
+		unsigned long t = millis(); // note, this is not cycle/us accurate timing info, this is rough ms level timing
+		if (heaterPacketCounter > 0)
+		{
+			lastHeaterPacketDeltaMillis = t - lastHeaterPacketMillis; // measure cycle period
+		}
 		heaterPacketCounter++;
-		lastHeaterPacketMillis = millis(); // not, this is not cycle/us accurate timing info, this is rough ms level timing
+		lastHeaterPacketMillis = t;
 		// init target temperature once we have reports from the heater
 		if (targetTemperatureCelsius == -1)
 		{
@@ -161,6 +201,8 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		}
 		if (remote)
 		{
+			memcpy(&lastRemoteControlPacketParsed, &packet, sizeof(RinnaiControlPacket));
+			memcpy(lastRemoteControlPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 			remoteControlPacketCounter++;
 			lastRemoteControlPacketMillis = millis();
 		}
@@ -172,9 +214,12 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 			lastLocalControlPacketMillis = millis();
 		}
 	}
-	else
+	else // source == UNKNOWN || local HEATER
 	{
-		return false;
+		// save metrics for troubleshooting and research
+		memcpy(lastUnknownPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
+		unknownPacketCounter++;
+		lastUnknownPacketMillis = millis();
 	}
 	return true;
 }
@@ -318,7 +363,7 @@ void RinnaiMQTTGateway::onMqttConnected()
 	// send a '/config' topic to achieve MQTT discovery - https://www.home-assistant.io/docs/mqtt/discovery/
 	DynamicJsonDocument doc(CONFIG_JSON_MAX_SIZE);
 	doc["~"] = mqttTopic;
-	doc["name"] = DEVICE_NAME;
+	doc["name"] = haDeviceName;
 	doc["action_topic"] = "~/state";
 	doc["action_template"] = "{{ value_json.action }}";
 	doc["current_temperature_topic"] = "~/state";
@@ -339,7 +384,7 @@ void RinnaiMQTTGateway::onMqttConnected()
 	doc["availability_topic"] = "~/availability";
 	String payload;
 	serializeJson(doc, payload);
-	logStream().printf("Sending on MQTT channel '%s/config': %d bytes, %s\n", mqttTopic.c_str(), payload.length(), payload.c_str());
+	logStream().printf("Sending on MQTT channel '%s/config': %d/%d bytes, %s\n", mqttTopic.c_str(), payload.length(), CONFIG_JSON_MAX_SIZE, payload.c_str());
 	ret = mqttClient.publish(mqttTopic + "/config", payload);
 	if (!ret)
 	{
@@ -350,5 +395,18 @@ void RinnaiMQTTGateway::onMqttConnected()
 	if (!ret)
 	{
 		logStream().println("Error publishing an availability MQTT message");
+	}
+}
+
+long RinnaiMQTTGateway::millisDelta(unsigned long t1, unsigned long t2)
+{
+	// how to do it even better to handle more edge cases, overflow of millis and unsigned/signed issues?
+	if (t1 > t2)
+	{
+		return t1 - t2;
+	}
+	else
+	{
+		return - (t2 - t1);
 	}
 }
