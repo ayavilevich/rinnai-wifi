@@ -238,7 +238,7 @@ bool RinnaiMQTTGateway::override(OverrideCommand command)
 {
 	// check if state is valid for sending
 	unsigned long originalControlPacketAge = millis() - lastLocalControlPacketMillis;
-	if (originalControlPacketAge > MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS) // if we have no recent original packet. can happen because we send too many overrides or because no panel signal is available
+	if (originalControlPacketAge > MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS) // if we have no recent original packet. can happen because no panel signal is available
 	{
 		logStream().printf("No fresh original data for override command %d, age %lu\n", command, originalControlPacketAge);
 		return false;
@@ -268,7 +268,7 @@ bool RinnaiMQTTGateway::override(OverrideCommand command)
 	bool overRet = txDecoder.setOverridePacket(buf, RinnaiSignalDecoder::BYTES_IN_PACKET);
 	if (overRet == false)
 	{
-		logStream().println("Error setting override");
+		logStream().printf("Error setting override, command = %d\n", command); // are we hammering too fast?
 		return false;
 	}
 	return true;
