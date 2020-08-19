@@ -51,7 +51,7 @@ bool RinnaiProtocolDecoder::decodeHeaterPacket(const byte *data, RinnaiHeaterPac
 	packet.activeId = (data[0] >> 4) & 0x7;
 	packet.inUse = data[2] & 0x10;
 	packet.on = data[1] & 0x40;
-	packet.startupState = data[3] && 0x7f;
+	packet.startupState = data[3] & 0x7f;
 	bool ret = temperatureCodeToTemperatureCelsius(data[2] & 0xf, packet.temperatureCelsius);
 	return ret;
 }
