@@ -131,7 +131,7 @@ void RinnaiMQTTGateway::loop()
 		String payloadExpanded;
 		serializeJson(doc, payloadExpanded);
 		// send
-		logStream().printf("Sending on MQTT channel '%s': %d/%d, %s\n", mqttTopicState.c_str(), payloadExpanded.length(), STATE_JSON_MAX_SIZE, payloadExpanded.c_str());
+		logStream().printf("Sending on MQTT channel '%s': %d/%d bytes, %s\n", mqttTopicState.c_str(), payloadExpanded.length(), STATE_JSON_MAX_SIZE, payloadExpanded.c_str());
 		bool ret = mqttClient.publish(mqttTopicState, payloadExpanded);
 		if (!ret)
 		{
@@ -325,7 +325,7 @@ void RinnaiMQTTGateway::onMqttMessageReceived(String &fullTopic, String &payload
 			override(ON_OFF);
 		}
 	}
-	else if (topic == "override")
+	else if (topic == "priority")
 	{
 		override(PRIORITY);
 	}
