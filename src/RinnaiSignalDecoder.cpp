@@ -30,8 +30,8 @@ enum BitTaskState
 	WAIT_SYMBOL,
 };
 
-RinnaiSignalDecoder::RinnaiSignalDecoder(const byte pin, const byte proxyOutPin, const bool invertIn)
-	: pin(pin), proxyOutPin(proxyOutPin), invertIn(invertIn)
+RinnaiSignalDecoder::RinnaiSignalDecoder(const byte pin, const byte proxyOutPin, const bool invertIn, const bool invertOut)
+	: pin(pin), proxyOutPin(proxyOutPin), invertIn(invertIn), invertOut(invertOut)
 {
 }
 
@@ -49,7 +49,7 @@ bool RinnaiSignalDecoder::setup()
 	if (proxyOutPin != INVALID_PIN)
 	{
 		pinMode(proxyOutPin, OUTPUT);
-		digitalWrite(proxyOutPin, digitalRead(pin)); // outputting LOW will signal that we are ready to receive
+		digitalWrite(proxyOutPin, digitalRead(pin) ^ invertIn ^ invertOut); // outputting LOW will signal that we are ready to receive
 	}
 
 	// create interrupts
@@ -186,11 +186,7 @@ void IRAM_ATTR RinnaiSignalDecoder::pulseISRHandler()
 	PulseQueueItem item;
 	item.cycle = xthal_get_ccount();
 	//item.newLevel = gpio_get_level((gpio_num_t)pin); // not IRAM safe
-	item.newLevel = gpio_get_level_IRAM(pin);
-	if (invertIn)
-	{
-		item.newLevel = !item.newLevel;
-	}
+	item.newLevel = (bool)gpio_get_level_IRAM(pin) ^ invertIn;
 	// track changes to output
 	if (proxyOutPin != INVALID_PIN && !isOverriding) // if overriding proxy is enabled and we are not already overriding
 	{
@@ -208,7 +204,7 @@ void IRAM_ATTR RinnaiSignalDecoder::pulseISRHandler()
 		}
 		if (!isOverriding) // only if we didn't start an override task above
 		{
-			gpio_set_level_IRAM(proxyOutPin, item.newLevel); // mirror
+			gpio_set_level_IRAM(proxyOutPin, item.newLevel ^ invertOut); // mirror
 		}
 	}
 	lastPulseCycle = item.cycle;
@@ -425,16 +421,16 @@ void RinnaiSignalDecoder::overrideTaskHandler()
 
 void RinnaiSignalDecoder::writeOverridePacket()
 {
-	writePacket(proxyOutPin, overridePacket, BYTES_IN_PACKET);
+	writePacket(proxyOutPin, overridePacket, BYTES_IN_PACKET, invertOut);
 }
 
 // this is a bit-bang blocking function, consider other options to send pulses without blocking
-void RinnaiSignalDecoder::writePacket(const byte pin, const byte *data, const byte len)
+void RinnaiSignalDecoder::writePacket(const byte pin, const byte *data, const byte len, const bool invert)
 {
 	// send init
-	gpio_set_level_IRAM(pin, HIGH);
+	gpio_set_level_IRAM(pin, HIGH ^ invert);
 	delayMicroseconds(INIT_PULSE);
-	gpio_set_level_IRAM(pin, LOW);
+	gpio_set_level_IRAM(pin, LOW ^ invert);
 	// send bytes
 	for (byte i = 0; i < len; i++)
 	{
@@ -446,16 +442,16 @@ void RinnaiSignalDecoder::writePacket(const byte pin, const byte *data, const by
 			if (value)
 			{
 				delayMicroseconds(SHORT_PULSE);
-				gpio_set_level_IRAM(pin, HIGH);
+				gpio_set_level_IRAM(pin, HIGH ^ invert);
 				delayMicroseconds(LONG_PULSE);
-				gpio_set_level_IRAM(pin, LOW);
+				gpio_set_level_IRAM(pin, LOW ^ invert);
 			}
 			else
 			{
 				delayMicroseconds(LONG_PULSE);
-				gpio_set_level_IRAM(pin, HIGH);
+				gpio_set_level_IRAM(pin, HIGH ^ invert);
 				delayMicroseconds(SHORT_PULSE);
-				gpio_set_level_IRAM(pin, LOW);
+				gpio_set_level_IRAM(pin, LOW ^ invert);
 			}
 		}
 	}

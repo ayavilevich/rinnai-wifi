@@ -63,7 +63,10 @@
 #ifndef TX_IN_INVERT // "true" if we need to invert the incoming signal, set when an inverting mosfet is used to level shift the signal from 5v to 3.3V
 #define TX_IN_INVERT false
 #endif
-#ifndef TX_OUT_RINNAI_PIN	 // the exit fo the proxy, data from the local mcu with optional changes
+#ifndef TX_OUT_INVERT // "true" if we need to invert the outgoing signal, set when an inverting mosfet is used to level shift the signal from 3.3V to 5V
+#define TX_OUT_INVERT false
+#endif
+#ifndef TX_OUT_RINNAI_PIN	 // the exit of the proxy, data from the local mcu with optional changes
 #define TX_OUT_RINNAI_PIN -1 // default is a read only mode without overriding commands
 #endif
 
@@ -86,7 +89,7 @@ IotWebConf iotWebConf(HOST_NAME, &dnsServer, &server, WIFI_INITIAL_AP_PASSWORD, 
 WiFiClient net;
 MQTTClient mqttClient(MQTT_PACKET_MAX_SIZE);
 RinnaiSignalDecoder rxDecoder(RX_RINNAI_PIN, INVALID_PIN, RX_INVERT);
-RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN, TX_IN_INVERT);
+RinnaiSignalDecoder txDecoder(TX_IN_RINNAI_PIN, TX_OUT_RINNAI_PIN, TX_IN_INVERT, TX_OUT_INVERT);
 RinnaiMQTTGateway rinnaiMqttGateway(HA_DEVICE_NAME, rxDecoder, txDecoder, mqttClient, MQTT_TOPIC, TEST_PIN);
 RemoteDebug remoteDebug;
 

@@ -8,7 +8,7 @@ const byte INVALID_PIN = -1;
 class RinnaiSignalDecoder
 {
 public:
-	RinnaiSignalDecoder(const byte pin, const byte proxyOutPin = INVALID_PIN, const bool invertIn = false);
+	RinnaiSignalDecoder(const byte pin, const byte proxyOutPin = INVALID_PIN, const bool invertIn = false, const bool invertOut = false);
 	bool setup();
 
 	// expose properties
@@ -50,13 +50,14 @@ private:
 	void packetTaskHandler();
 	void overrideTaskHandler();
 	void writeOverridePacket();
-	static void writePacket(const byte pin, const byte * data, const byte len);
+	static void writePacket(const byte pin, const byte * data, const byte len, const bool invert = false);
 	static bool isOddParity(byte b);
 
 	// properties
 	byte pin = INVALID_PIN;
 	byte proxyOutPin = INVALID_PIN;
 	bool invertIn = false;
+	bool invertOut = false;
 	QueueHandle_t pulseQueue = NULL;
 	QueueHandle_t bitQueue = NULL;
 	QueueHandle_t packetQueue = NULL;
