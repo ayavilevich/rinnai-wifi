@@ -37,6 +37,7 @@ private:
 	void handleTemperatureSync();
 	bool override(OverrideCommand command);
 	long millisDelta(unsigned long t1, unsigned long t2);
+	long millisDeltaPositive(unsigned long t1, unsigned long t2, unsigned long cycle);
 
 	// properties
 	String haDeviceName;

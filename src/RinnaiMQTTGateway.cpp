@@ -113,18 +113,18 @@ void RinnaiMQTTGateway::loop()
 			}
 			if (localControlPacketCounter)
 			{
-				doc["locControlTiming"] = millisDelta(lastLocalControlPacketMillis, lastHeaterPacketMillis);
+				doc["locControlTiming"] = millisDeltaPositive(lastLocalControlPacketMillis, lastHeaterPacketMillis, lastHeaterPacketDeltaMillis);
 			}
 			if (remoteControlPacketCounter)
 			{
 				doc["remControlId"] = lastRemoteControlPacketParsed.myId;
 				doc["remControlBytes"] = RinnaiProtocolDecoder::renderPacket(lastRemoteControlPacketBytes);
-				doc["remControlTiming"] = millisDelta(lastRemoteControlPacketMillis, lastHeaterPacketMillis);
+				doc["remControlTiming"] = millisDeltaPositive(lastRemoteControlPacketMillis, lastHeaterPacketMillis, lastHeaterPacketDeltaMillis);
 			}
 			if (unknownPacketCounter)
 			{
 				doc["unknownBytes"] = RinnaiProtocolDecoder::renderPacket(lastUnknownPacketBytes);
-				doc["unknownTiming"] = millisDelta(lastUnknownPacketMillis, lastHeaterPacketMillis);
+				doc["unknownTiming"] = millisDeltaPositive(lastUnknownPacketMillis, lastHeaterPacketMillis, lastHeaterPacketDeltaMillis);
 			}
 		}
 		// re-serialize payload
@@ -421,4 +421,15 @@ long RinnaiMQTTGateway::millisDelta(unsigned long t1, unsigned long t2)
 	{
 		return - (t2 - t1);
 	}
+}
+
+// try to calculate a positive delta in a scenario where events are expected to come in a recurring cyclic manner
+long RinnaiMQTTGateway::millisDeltaPositive(unsigned long t1, unsigned long t2, unsigned long cycle)
+{
+	long d = millisDelta(t1, t2);
+	if (d < 0)
+	{
+		return d + cycle;
+	}
+	return d;
 }
