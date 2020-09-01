@@ -166,10 +166,6 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		{
 			return false;
 		}
-		if (logLevel == PARSED)
-		{
-			logStream().printf("Heater packet: a=%d o=%d u=%d t=%d\n", packet.activeId, packet.on, packet.inUse, packet.temperatureCelsius);
-		}
 		memcpy(&lastHeaterPacketParsed, &packet, sizeof(RinnaiHeaterPacket));
 		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		// counters and timings
@@ -187,6 +183,11 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		}
 		// act on temperature info
 		handleTemperatureSync();
+		// log
+		if (logLevel == PARSED)
+		{
+			logStream().printf("Heater packet: a=%d o=%d u=%d t=%d\n", packet.activeId, packet.on, packet.inUse, packet.temperatureCelsius);
+		}
 	}
 	else if (source == CONTROL)
 	{
@@ -195,10 +196,6 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		if (!ret)
 		{
 			return false;
-		}
-		if (logLevel == PARSED)
-		{
-			logStream().printf("Control packet: r=%d i=%d o=%d p=%d td=%d tu=%d\n", remote, packet.myId, packet.onOffPressed, packet.priorityPressed, packet.temperatureDownPressed, packet.temperatureUpPressed);
 		}
 		if (remote)
 		{
@@ -213,6 +210,11 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 			memcpy(lastLocalControlPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 			localControlPacketCounter++;
 			lastLocalControlPacketMillis = millis();
+		}
+		// log
+		if (logLevel == PARSED)
+		{
+			logStream().printf("Control packet: r=%d i=%d o=%d p=%d td=%d tu=%d\n", remote, packet.myId, packet.onOffPressed, packet.priorityPressed, packet.temperatureDownPressed, packet.temperatureUpPressed);
 		}
 	}
 	else // source == UNKNOWN || local HEATER
