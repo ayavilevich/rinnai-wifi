@@ -169,7 +169,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		memcpy(&lastHeaterPacketParsed, &packet, sizeof(RinnaiHeaterPacket));
 		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		// counters and timings
-		unsigned long t = item.startMicros / 1000;
+		unsigned long t = item.startMillis;
 		if (heaterPacketCounter > 0)
 		{
 			lastHeaterPacketDeltaMillis = t - lastHeaterPacketMillis; // measure cycle period
@@ -202,14 +202,14 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 			memcpy(&lastRemoteControlPacketParsed, &packet, sizeof(RinnaiControlPacket));
 			memcpy(lastRemoteControlPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 			remoteControlPacketCounter++;
-			lastRemoteControlPacketMillis = item.startMicros / 1000;
+			lastRemoteControlPacketMillis = item.startMillis;
 		}
 		else
 		{
 			memcpy(&lastLocalControlPacketParsed, &packet, sizeof(RinnaiControlPacket));
 			memcpy(lastLocalControlPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 			localControlPacketCounter++;
-			lastLocalControlPacketMillis = item.startMicros / 1000;
+			lastLocalControlPacketMillis = item.startMillis;
 		}
 		// log
 		if (logLevel == PARSED)
@@ -222,7 +222,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		// save metrics for troubleshooting and research
 		memcpy(lastUnknownPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		unknownPacketCounter++;
-		lastUnknownPacketMillis = item.startMicros / 1000;
+		lastUnknownPacketMillis = item.startMillis;
 	}
 	return true;
 }
@@ -242,7 +242,7 @@ bool RinnaiMQTTGateway::override(OverrideCommand command)
 	unsigned long originalControlPacketAge = millis() - lastLocalControlPacketMillis;
 	if (originalControlPacketAge > MAX_OVERRIDE_PERIOD_FROM_ORIGINAL_MS) // if we have no recent original packet. can happen because no panel signal is available
 	{
-		logStream().printf("No fresh original data for override command %d, age %lu\n", command, originalControlPacketAge);
+		logStream().printf("No fresh original data for override command %d, age %lu, millis %lu, lastLocal %lu\n", command, originalControlPacketAge, millis(), lastLocalControlPacketMillis);
 		return false;
 	}
 	// logStream().printf("Attempting override command %d, age %d\n", command, originalControlPacketAge);
