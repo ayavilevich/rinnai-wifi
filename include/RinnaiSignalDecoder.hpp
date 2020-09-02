@@ -99,7 +99,8 @@ struct BitQueueItem
 struct PacketQueueItem
 {
 	byte data[RinnaiSignalDecoder::BYTES_IN_PACKET];
-	unsigned int startCycle; // when did it start
+	unsigned int startCycle; // when did it start (using core cycle counter)
+	unsigned int startMicros; // when did it start (using a counter that overflows less and has a defined origin)
 	byte bitsPresent;
 	bool validPre;
 	bool validChecksum;

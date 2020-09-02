@@ -304,6 +304,7 @@ void RinnaiSignalDecoder::packetTaskHandler()
 	PacketQueueItem packet; // current state
 	packet.bitsPresent = 0;
 	packet.startCycle = 0;
+	packet.startMicros = 0;
 	packet.validPre = false;
 	packet.validChecksum = false;
 	packet.validParity = false;
@@ -340,6 +341,9 @@ void RinnaiSignalDecoder::packetTaskHandler()
 				// reset state
 				packet.bitsPresent = 0;
 				packet.startCycle = bit.startCycle;
+				packet.startMicros = micros(); // this is the time of processing the bit queue item and not exact time of the pulse in the ISR. it was accurate to a ms level most of the time.
+				// it is not possible to compensate for the difference using clockCyclesToMicroseconds(xthal_get_ccount() - bit.startCycle) because "xthal_get_ccount" is core specific and this task is not pinned to a specific core.
+				// the difference is about 1ms, though, assuming one of the cores can run this task and we are not "stuck" on high priority tasks. This can be observed using xPortGetCoreID() and the expression above.
 				packet.validPre = bit.bit == PRE;
 				packet.validChecksum = false;
 				packet.validParity = false;

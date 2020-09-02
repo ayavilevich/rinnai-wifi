@@ -169,7 +169,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		memcpy(&lastHeaterPacketParsed, &packet, sizeof(RinnaiHeaterPacket));
 		memcpy(lastHeaterPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		// counters and timings
-		unsigned long t = millis(); // note, this is not cycle/us accurate timing info, this is rough ms level timing
+		unsigned long t = item.startMicros / 1000;
 		if (heaterPacketCounter > 0)
 		{
 			lastHeaterPacketDeltaMillis = t - lastHeaterPacketMillis; // measure cycle period
@@ -202,14 +202,14 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 			memcpy(&lastRemoteControlPacketParsed, &packet, sizeof(RinnaiControlPacket));
 			memcpy(lastRemoteControlPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 			remoteControlPacketCounter++;
-			lastRemoteControlPacketMillis = millis();
+			lastRemoteControlPacketMillis = item.startMicros / 1000;
 		}
 		else
 		{
 			memcpy(&lastLocalControlPacketParsed, &packet, sizeof(RinnaiControlPacket));
 			memcpy(lastLocalControlPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 			localControlPacketCounter++;
-			lastLocalControlPacketMillis = millis();
+			lastLocalControlPacketMillis = item.startMicros / 1000;
 		}
 		// log
 		if (logLevel == PARSED)
@@ -222,7 +222,7 @@ bool RinnaiMQTTGateway::handleIncomingPacketQueueItem(const PacketQueueItem &ite
 		// save metrics for troubleshooting and research
 		memcpy(lastUnknownPacketBytes, item.data, RinnaiProtocolDecoder::BYTES_IN_PACKET);
 		unknownPacketCounter++;
-		lastUnknownPacketMillis = millis();
+		lastUnknownPacketMillis = item.startMicros / 1000;
 	}
 	return true;
 }
