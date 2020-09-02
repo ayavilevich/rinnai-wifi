@@ -132,7 +132,7 @@ void RinnaiMQTTGateway::loop()
 		serializeJson(doc, payloadExpanded);
 		// send
 		logStream().printf("Sending on MQTT channel '%s': %d/%d bytes, %s\n", mqttTopicState.c_str(), payloadExpanded.length(), STATE_JSON_MAX_SIZE, payloadExpanded.c_str());
-		bool ret = mqttClient.publish(mqttTopicState, payloadExpanded);
+		bool ret = mqttClient.publish(mqttTopicState, payloadExpanded, true, 0);
 		if (!ret)
 		{
 			logStream().println("Error publishing a state MQTT message");
@@ -399,13 +399,13 @@ void RinnaiMQTTGateway::onMqttConnected()
 	String payload;
 	serializeJson(doc, payload);
 	logStream().printf("Sending on MQTT channel '%s/config': %d/%d bytes, %s\n", mqttTopic.c_str(), payload.length(), CONFIG_JSON_MAX_SIZE, payload.c_str());
-	ret = mqttClient.publish(mqttTopic + "/config", payload);
+	ret = mqttClient.publish(mqttTopic + "/config", payload, true, 0);
 	if (!ret)
 	{
 		logStream().println("Error publishing a config MQTT message");
 	}
 	// send an availability topic to signal that we are available
-	ret = mqttClient.publish(mqttTopic + "/availability", "online");
+	ret = mqttClient.publish(mqttTopic + "/availability", "online", true, 0);
 	if (!ret)
 	{
 		logStream().println("Error publishing an availability MQTT message");
