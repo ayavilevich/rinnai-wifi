@@ -21,8 +21,10 @@ const int SYMBOL_SHORT_PERIOD_RATIO_MAX = SYMBOL_DURATION_US * 35 / 100;
 const int SYMBOL_LONG_PERIOD_RATIO_MIN = SYMBOL_DURATION_US * 65 / 100;
 const int SYMBOL_LONG_PERIOD_RATIO_MAX = SYMBOL_DURATION_US * 85 / 100;
 
-const int EXPECTED_PERIOD_BETWEEN_PACKETS_MIN = 160000; // us
-const int EXPECTED_PERIOD_BETWEEN_PACKETS_MAX = 180000; // us
+// cycles of 200ms and 250ms were observed. A packet is 30ms long. Allow for 10ms of margin.
+const int PERIOD_BETWEEN_TX_PACKETS_MARGIN = 10000; // us
+const int EXPECTED_PERIOD_BETWEEN_TX_PACKETS_MIN = 200000 - 30000 - PERIOD_BETWEEN_TX_PACKETS_MARGIN; // us
+const int EXPECTED_PERIOD_BETWEEN_TX_PACKETS_MAX = 250000 - 30000 + PERIOD_BETWEEN_TX_PACKETS_MARGIN; // us
 
 enum BitTaskState
 {
@@ -194,7 +196,7 @@ void IRAM_ATTR RinnaiSignalDecoder::pulseISRHandler()
 		if (overridePacketSet && item.newLevel) // if there is override data and it is a rise
 		{
 			unsigned int delta = clockCyclesToMicroseconds(item.cycle - lastPulseCycle);
-			if (delta > EXPECTED_PERIOD_BETWEEN_PACKETS_MIN && delta < EXPECTED_PERIOD_BETWEEN_PACKETS_MAX) // and if timings match
+			if (delta > EXPECTED_PERIOD_BETWEEN_TX_PACKETS_MIN && delta < EXPECTED_PERIOD_BETWEEN_TX_PACKETS_MAX) // and if timings match
 			{
 				isOverriding = true;
 				// unblock high priority override task
@@ -413,7 +415,7 @@ void RinnaiSignalDecoder::overrideTaskHandler()
 		{
 			// we got a notification, write data
 			writeOverridePacket();
-			delayMicroseconds(EXPECTED_PERIOD_BETWEEN_PACKETS_MAX - EXPECTED_PERIOD_BETWEEN_PACKETS_MIN); // delay to make sure we cover the original changes
+			delayMicroseconds(PERIOD_BETWEEN_TX_PACKETS_MARGIN * 2); // delay to make sure we cover the original changes
 			// we finished, clear state
 			overridePacketSet = false; // this makes sure a packet is only sent once
 			isOverriding = false;
